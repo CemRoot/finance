@@ -1,8 +1,30 @@
 {# templates/tabs/details.html #}
-{# BU DOSYA ARTIK KULLANILMIYOR - İçerik overview.html'e taşındı #}
-{# İsterseniz bu dosyayı silebilir veya boş bırakabilirsiniz. #}
-{# Ya da sadece bir yönlendirme mesajı ekleyebilirsiniz: #}
+{# This file is intentionally simple as its original content (detailed charts) #}
+{# has been integrated into the 'Overview' tab (overview.html). #}
+{# This template now just provides a placeholder message when the 'Details' tab is clicked. #}
 
-<div class="alert alert-info text-center mt-4" role="alert">
-    <i class="fas fa-info-circle me-2"></i> Detailed charts are now shown in the Overview tab.
+<div class="alert alert-light text-center border mt-4 p-4" role="alert"> {# Used alert-light with border #}
+    <i class="fas fa-info-circle fa-2x text-primary mb-3"></i><br> {# Changed icon color #}
+    Detailed price action charts (Open/Close, High/Low Range, Volume Details) are now included at the bottom of the <strong>Overview</strong> tab.
 </div>
+
+{# You could optionally add a button/link to switch back to the overview tab #}
+{#
+<div class="text-center mt-3">
+    <button class="btn btn-sm btn-outline-primary" onclick="switchToOverviewTab()">
+        <i class="fas fa-arrow-left me-1"></i> Go to Overview
+    </button>
+    <script>
+        function switchToOverviewTab() {
+            // Use Bootstrap's Tab API to programmatically switch
+            var overviewTabLink = document.getElementById('overview-tab');
+            if (overviewTabLink) {
+                var tab = new bootstrap.Tab(overviewTabLink);
+                tab.show();
+            } else {
+                console.error("Could not find overview tab link to switch.");
+            }
+        }
+    </script>
+</div>
+#}
