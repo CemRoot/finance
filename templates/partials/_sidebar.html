@@ -1,0 +1,49 @@
+{# templates/partials/_sidebar.html #}
+<div class="sidebar-header pt-3 pb-2 mb-3 border-bottom px-3">
+    <h3 class="fs-5 text-center">Finansal Analiz</h3>
+</div>
+<div class="sidebar-search px-3 mb-3">
+    <form method="POST" action="{{ url_for('index') }}" id="searchForm"> {# Action eklendi #}
+        <div class="input-group input-group-sm"> {# Boyut küçültüldü #}
+            <input type="text" id="stock" name="stock" class="form-control" placeholder="Sembol Girin (AAPL)" value="{{ stock if stock else '' }}" aria-label="Hisse Senedi Sembolü">
+            <button type="submit" class="btn btn-primary">
+                <i class="fas fa-search"></i>
+            </button>
+        </div>
+    </form>
+</div>
+{# Navigasyon (Bootstrap Pills) #}
+<ul class="nav flex-column nav-pills px-3" id="v-pills-tab" role="tablist" aria-orientation="vertical">
+    <li class="nav-item" role="presentation">
+        {# data-bs-target ID'leri index.html'deki tab pane ID'leri ile eşleşmeli #}
+        <a class="nav-link active" id="v-pills-overview-tab" data-bs-toggle="pill" data-bs-target="#overview" type="button" role="tab" aria-controls="overview" aria-selected="true">
+            <i class="fas fa-chart-pie fa-fw me-2"></i> Genel Bakış
+        </a>
+    </li>
+    <li class="nav-item" role="presentation">
+        <a class="nav-link" id="v-pills-news-tab" data-bs-toggle="pill" data-bs-target="#news" type="button" role="tab" aria-controls="news" aria-selected="false">
+            <i class="fas fa-newspaper fa-fw me-2"></i> Haberler
+        </a>
+    </li>
+    <li class="nav-item" role="presentation">
+        <a class="nav-link" id="v-pills-details-tab" data-bs-toggle="pill" data-bs-target="#details" type="button" role="tab" aria-controls="details" aria-selected="false">
+            <i class="fas fa-magnifying-glass-chart fa-fw me-2"></i> Detaylı Analiz
+        </a>
+    </li>
+    <li class="nav-item" role="presentation">
+        <a class="nav-link" id="v-pills-forecast-tab" data-bs-toggle="pill" data-bs-target="#forecast" type="button" role="tab" aria-controls="forecast" aria-selected="false">
+            <i class="fas fa-wand-magic-sparkles fa-fw me-2"></i> Tahminler
+        </a>
+    </li>
+</ul>
+{# İsteğe bağlı: Alt Kısım (örn. linkler, copyright) #}
+<div class="sidebar-footer mt-auto px-3 py-2 text-center text-muted small">
+    <hr>
+    <span>© {{ now().year }} Finans Dashboard</span>
+</div>
+
+{# Sidebar için gerekli JS (Bootstrap zaten hallediyor olmalı) #}
+<script>
+    // Aktif sekmeyi URL'den veya localStorage'dan ayarlamak için
+    // (Bu kısım gerekirse eklenebilir, Bootstrap'in varsayılan davranışı yeterli olabilir)
+</script>

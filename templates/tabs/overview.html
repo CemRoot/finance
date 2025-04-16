@@ -1,0 +1,151 @@
+{# templates/tabs/overview.html #}
+{% if stock_data and not error %}
+    <div class="row">
+        <!-- Özet Kartları -->
+        <div class="col-12">
+            <div class="row summary-cards g-3"> {# g-3 ile kartlar arası boşluk #}
+                <div class="col-xl-3 col-md-6">
+                    <div class="card h-100 shadow-sm border-0">
+                        <div class="card-body">
+                            <h5 class="card-title text-muted small text-uppercase mb-1">Son Kapanış</h5>
+                            <p class="card-text price fs-4 fw-semibold mb-0">
+                                {{ stock_data.current_price|format_number }}$ {# current_price kullanalım #}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-xl-3 col-md-6">
+                    <div class="card h-100 shadow-sm border-0">
+                        <div class="card-body">
+                            <h5 class="card-title text-muted small text-uppercase mb-1">Günlük Değişim</h5>
+                             <p class="card-text price fs-4 fw-semibold mb-0 {{ 'text-success' if stock_data.change_percent >= 0 else 'text-danger' }}">
+                                {{ stock_data.change_percent|format_number }}%
+                                {% if stock_data.change_percent is not none %}
+                                <i class="fas {{ 'fa-arrow-trend-up' if stock_data.change_percent >= 0 else 'fa-arrow-trend-down' }} ms-1 small"></i>
+                                {% endif %}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                 <div class="col-xl-3 col-md-6">
+                    <div class="card h-100 shadow-sm border-0">
+                        <div class="card-body">
+                            {# None olmayan en yüksek değeri bul #}
+                            {% set high_max = stock_data.high_values | reject('none') | list | max %}
+                            <h5 class="card-title text-muted small text-uppercase mb-1">En Yüksek ({{ stock_data.labels|length }} Kayıt)</h5>
+                            <p class="card-text price fs-4 fw-semibold mb-0">
+                                {{ high_max | format_number }}$
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-xl-3 col-md-6">
+                    <div class="card h-100 shadow-sm border-0">
+                        <div class="card-body">
+                             {# None olmayan en düşük değeri bul #}
+                            {% set low_min = stock_data.low_values | reject('none') | list | min %}
+                            <h5 class="card-title text-muted small text-uppercase mb-1">En Düşük ({{ stock_data.labels|length }} Kayıt)</h5>
+                            <p class="card-text price fs-4 fw-semibold mb-0">
+                                {{ low_min | format_number }}$
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+
+        <!-- Ana Grafik ve Sağ Panel -->
+        <div class="col-lg-8 mt-4">
+            <div class="card shadow-sm border-0 h-100">
+                 <div class="card-header bg-transparent border-0 pb-0"> {# Üst kenarlık ve arkaplanı kaldır #}
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5 class="card-title mb-0 fs-6 text-dark">Fiyat Grafiği</h5>
+                        <div class="btn-group btn-group-sm chart-type-selector" role="group">
+                             {# Buton grubu radio butonları ile güncellendi #}
+                            <input type="radio" class="btn-check" name="chartType" id="candlestickRadio" autocomplete="off" data-chart-type="candlestick" checked>
+                            <label class="btn btn-outline-secondary" for="candlestickRadio"><i class="fas fa-chart-bar me-1"></i>Mum</label>
+
+                            <input type="radio" class="btn-check" name="chartType" id="lineRadio" autocomplete="off" data-chart-type="line">
+                            <label class="btn btn-outline-secondary" for="lineRadio"><i class="fas fa-chart-line me-1"></i>Çizgi</label>
+                        </div>
+                    </div>
+                 </div>
+                <div class="card-body pt-2"> {# Üst padding azaltıldı #}
+                    <div class="chart-container price-chart-container mb-2" style="height: 280px;"> {# Yükseklik ayarlandı #}
+                        <canvas id="priceChart"></canvas> {# JS bunu doldurur #}
+                    </div>
+                    <div class="chart-footer text-end border-top pt-2"> {# Alt border eklendi #}
+                        <small class="text-muted" style="font-size: 0.75rem;"> {# Font küçültüldü #}
+                            <i class="fas fa-clock me-1"></i><span class="last-updated">{{ stock_data.timestamp|format_date('%d.%m.%Y %H:%M:%S %Z') }}</span> {# Format güncellendi #}
+                            <button id="refreshStockBtn" class="btn btn-sm btn-outline-secondary ms-2 py-0 px-1" title="Yenile"> {# Title eklendi #}
+                                <i class="fas fa-sync"></i>
+                            </button>
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sağ Panel: Detaylı Analiz Özeti -->
+        <div class="col-lg-4 mt-4">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-body d-flex flex-column">
+                    <h5 class="card-title fs-6 mb-3 text-dark">Hızlı Analiz</h5>
+                    <div class="analysis-metrics mb-3">
+                        {# None olmayan son hacmi bul #}
+                        {% set last_volume = (stock_data.volume_values | reject('none') | list or [None])[-1] %}
+                        <div class="metric d-flex justify-content-between border-bottom pb-1 mb-1">
+                            <span class="metric-label small text-muted">Son Hacim</span>
+                            <span class="metric-value fw-medium">{{ last_volume|format_number(0) }}</span>
+                        </div>
+                        <div class="metric d-flex justify-content-between border-bottom pb-1 mb-1">
+                            <span class="metric-label small text-muted">Ort. Hacim</span>
+                            <span class="metric-value fw-medium">{{ stock_data['volume_values']|calculate_average }}</span>
+                        </div>
+                         <div class="metric d-flex justify-content-between border-bottom pb-1 mb-1">
+                            <span class="metric-label small text-muted">Volatilite (Yıllık)</span>
+                             {# volatility_metric app.py'den geliyor #}
+                             <span class="metric-value fw-medium">{{ '%.2f%%'|format(volatility_metric * 100) if volatility_metric is not none else 'N/A' }}</span>
+                        </div>
+                    </div>
+
+                    <!-- Teknik Göstergeler Özeti -->
+                    <h6 class="mt-3 fs-6 text-dark">Teknik Sinyaller</h6>
+                    <div class="technical-indicators mb-3">
+                         {# sma_status ve rsi_status app.py'den geliyor #}
+                        <div class="indicator d-flex justify-content-between pb-1 mb-1">
+                             <span class="indicator-label small text-muted">SMA(20) Durumu</span>
+                             <span class="indicator-value fw-medium {{ 'text-success' if sma_status == 'Üzerinde' else ('text-danger' if sma_status == 'Altında' else 'text-secondary') }}">
+                                 {{ sma_status if sma_status else 'N/A' }}
+                             </span>
+                         </div>
+                         <div class="indicator d-flex justify-content-between pb-1 mb-1">
+                             <span class="indicator-label small text-muted">RSI(14) Durumu</span>
+                             <span class="indicator-value fw-medium {{ 'text-danger' if rsi_status == 'Aşırı Alım' else ('text-success' if rsi_status == 'Aşırı Satım' else ('text-warning' if rsi_status == 'Nötr' else 'text-secondary')) }}">
+                                 {{ rsi_status if rsi_status else 'N/A' }}
+                             </span>
+                         </div>
+                    </div>
+
+                    <!-- Mini Hacim Grafiği -->
+                    <div class="mt-auto pt-2">
+                         <h6 class="fs-6 mb-1 text-dark">Hacim Trendi</h6>
+                        <div class="chart-container volume-chart-container" style="height: 80px;"> {# Daha küçük yükseklik #}
+                            <canvas id="volumeChart"></canvas> {# JS bunu doldurur #}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div> {# Kapanan .row (Genel Bakış İçeriği) #}
+{% else %}
+     {# stock_data yoksa veya hata varsa gösterilecek mesaj #}
+     <div class="alert alert-light text-center mt-4">
+        <i class="fas fa-chart-line fa-2x text-muted mb-3"></i><br>
+        Genel bakış verileri yüklenemedi.
+        {% if error_message %}
+            <br><small class="text-danger">Hata: {{ error_message }}</small>
+        {% endif %}
+    </div>
+{% endif %} {# if stock_data and not error sonu #}

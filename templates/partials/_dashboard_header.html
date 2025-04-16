@@ -1,0 +1,43 @@
+{# templates/partials/_dashboard_header.html #}
+{% if stock %}
+<div class="dashboard-header mb-3">
+    <h1 class="fs-4"> {# Font boyutu ayarlandı #}
+        {{ stock }}
+        {% if stock_data and stock_data.company_name and stock_data.company_name != stock %}
+            <small class="text-muted fw-normal">({{ stock_data.company_name }})</small>
+        {% endif %}
+    </h1>
+    <div class="status-badges ms-md-auto"> {# Hizalama için ms-md-auto #}
+        {# Piyasa Durumu (JS ile güncellenir, başlangıç değeri backend'den gelir) #}
+        <div class="market-status-badge badge rounded-pill px-3 py-1 {{ 'bg-success text-white' if stock_data and stock_data.market_status == 'Açık' else 'bg-secondary text-white' }}">
+             {% if stock_data and stock_data.market_status %}
+                <i class="fas {{ 'fa-check-circle' if stock_data.market_status == 'Açık' else 'fa-clock' }} me-1"></i>
+                Piyasa {{ stock_data.market_status }}
+            {% else %}
+                 <i class="fas fa-question-circle me-1"></i> Piyasa Bilinmiyor
+            {% endif %}
+        </div>
+
+        {# Fiyat Bilgisi #}
+        {% if stock_data and stock_data.current_price is not none %}
+            <div class="price-badge text-end ms-3">
+                <span class="current-price fw-bold fs-5">{{ stock_data.current_price|format_number }}$</span>
+                <span class="change-percent small {{ 'text-success' if stock_data.change_percent >= 0 else 'text-danger' }}">
+                    <i class="fas {{ 'fa-arrow-up' if stock_data.change_percent >= 0 else 'fa-arrow-down' }} me-1"></i>
+                    {{ stock_data.change_percent|format_number }}%
+                </span>
+            </div>
+        {% else %}
+            <div class="price-badge text-end ms-3">
+                <span class="current-price fw-bold fs-5">N/A</span>
+                <span class="change-percent small text-muted">N/A</span>
+            </div>
+        {% endif %}
+
+        {# Karar Rozeti #}
+        <div class="decision-badge badge rounded-pill px-3 py-1 ms-3 fs-6 {{ 'bg-success text-white' if decision == 'Al' else ('bg-danger text-white' if decision == 'Sat' else ('bg-warning text-dark' if decision == 'Bekle' else 'bg-secondary text-white')) }}">
+            {{ decision }}
+        </div>
+    </div>
+</div>
+{% endif %}

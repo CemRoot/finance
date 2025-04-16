@@ -1,0 +1,31 @@
+{# templates/partials/_flash_messages.html #}
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        <div class="flash-messages-container position-fixed top-0 end-0 p-3" style="z-index: 1055"> {# Sağ üste sabit #}
+            {% for category, message in messages %}
+                {# Kategori 'danger' ise 'danger', 'warning' ise 'warning', diğerleri 'success' veya 'info' #}
+                {% set alert_class = 'alert-' + (category if category in ['danger', 'warning', 'success', 'info'] else 'info') %}
+                <div class="alert {{ alert_class }} alert-dismissible fade show shadow-sm" role="alert">
+                    <i class="fas {% if category == 'danger' %}fa-exclamation-triangle{% elif category == 'warning' %}fa-exclamation-circle{% elif category == 'success' %}fa-check-circle{% else %}fa-info-circle{% endif %} me-2"></i>
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            {% endfor %}
+        </div>
+         {# Flash mesajlarının birkaç saniye sonra otomatik kapanması için JS eklenebilir #}
+         <script>
+             document.addEventListener('DOMContentLoaded', function() {
+                 const alerts = document.querySelectorAll('.flash-messages-container .alert');
+                 alerts.forEach(function(alert) {
+                     // 5 saniye sonra otomatik kapat
+                     setTimeout(function() {
+                         const bsAlert = bootstrap.Alert.getInstance(alert);
+                         if (bsAlert) {
+                             bsAlert.close();
+                         }
+                     }, 5000); // 5000ms = 5 saniye
+                 });
+             });
+         </script>
+    {% endif %}
+{% endwith %}

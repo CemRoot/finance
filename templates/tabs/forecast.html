@@ -1,0 +1,73 @@
+{# templates/tabs/forecast.html #}
+{% if stock %} {# Tahmin için sadece hisse sembolü yeterli, JS tarafı veriyi çekecek #}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card shadow-sm border-0">
+            <div class="card-header bg-light border-0">
+                <h5 class="card-title mb-0 fs-6">Fiyat Tahmini (Prophet Modeli)</h5>
+            </div>
+            <div class="card-body">
+                <div id="forecastContent">
+                    {# Yükleniyor/Hata durumu forecast.js tarafından yönetilecek #}
+                    <div class="row">
+                        <div class="col-lg-8 mb-4 mb-lg-0">
+                            <div id="forecastChartContainer" style="min-height: 400px; position: relative;"> {# Yükseklik ayarlandı #}
+                                <div id="forecastChart" style="height: 100%; width: 100%;">
+                                    {# Başlangıçta yükleniyor göstergesi (forecast.js'den) #}
+                                     <div class="d-flex justify-content-center align-items-center h-100 text-muted">
+                                        <div class="spinner-border spinner-border-sm me-2" role="status">
+                                            <span class="visually-hidden">Yükleniyor...</span>
+                                        </div>
+                                        Tahmin grafiği yükleniyor...
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-lg-4">
+                            <div class="metrics-container bg-light p-3 rounded"> {# Arkaplan eklendi #}
+                                <h6 class="mb-3 text-uppercase small text-muted">Tahmin Metrikleri</h6>
+                                <div class="metric-item d-flex justify-content-between mb-2">
+                                    <span class="metric-label small">Trend Yönü:</span>
+                                    <span id="trendDirection" class="metric-value fw-medium">--</span>
+                                </div>
+                                <div class="metric-item d-flex justify-content-between mb-2">
+                                    <span class="metric-label small">Trend Gücü:</span>
+                                    <span id="trendStrength" class="metric-value fw-medium">--</span>
+                                </div>
+                                <div class="metric-item d-flex justify-content-between mb-2">
+                                    <span class="metric-label small">Volatilite:</span>
+                                    <span id="historicalVolatility" class="metric-value fw-medium">--</span>
+                                </div>
+                                <div class="metric-item d-flex justify-content-between mb-2">
+                                    <span class="metric-label small">Mevsimsellik:</span>
+                                    <span id="seasonalityStrength" class="metric-value fw-medium">--</span>
+                                </div>
+                                <div class="metric-item d-flex justify-content-between mb-2">
+                                    <span class="metric-label small">Güven Aralığı:</span>
+                                    <span id="confidenceInterval" class="metric-value fw-medium">--</span>
+                                </div>
+
+                                <hr class="my-3">
+
+                                <div class="forecast-summary">
+                                    <h6 class="mb-2 text-uppercase small text-muted">Özet</h6>
+                                    <p id="forecastSummary" class="small text-muted fst-italic">Tahmin özeti oluşturuluyor...</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <p class="text-muted small mt-3 fst-italic border-top pt-2">
+                        * Tahminler Prophet modeli kullanılarak geçmiş verilere dayanarak oluşturulmuştur ve yalnızca bilgilendirme amaçlıdır, yatırım tavsiyesi niteliği taşımaz. Piyasa koşulları ve beklenmedik olaylar sonuçları etkileyebilir.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{# Tahmin scriptleri base.html'de ve index.html'in script bloğunda yükleniyor #}
+{% else %}
+    <div class="alert alert-light text-center mt-4">
+        <i class="fas fa-wand-magic-sparkles fa-2x text-muted mb-3"></i><br>
+        Tahminleri görmek için lütfen bir hisse senedi seçin.
+    </div>
+{% endif %} {# if stock sonu #}
