@@ -25,3 +25,4 @@ local_settings.py
 # Sensitive data
 *.env
 .env
+src/google.json
