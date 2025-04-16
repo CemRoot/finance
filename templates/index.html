@@ -71,68 +71,74 @@
 
 {% block scripts %}
     {# Include the script that initializes the global window.stockData variable #}
-    <script src="{{ url_for('static', filename='js/stock-data-loader.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/stock-data-loader.js') }}" defer></script> {# Added defer #}
 
-    {# Pass data from Flask to JavaScript using data attributes for simple flags #}
+    {# Pass simple flags using data attributes #}
     <div id="flask-data"
         data-stock="{% if stock %}{{ stock }}{% else %}{% endif %}"
         data-has-error="{% if error %}true{% else %}false{% endif %}"
         style="display:none;">
     </div>
 
-    {# Embed the main stock_data object as JSON in a script tag #}
+    {# Embed the main stock_data object as JSON in a dedicated script tag #}
     {% if stock_data and not error %}
     <script id="stock-data-json" type="application/json">
-        {# *** DÜZELTME: Python dict'ini JSON'a doğru şekilde serileştirmek için tojson filtresini kullanın *** #}
+        {# Use tojson | safe to correctly serialize the Python dict to a JSON string #}
         {{ stock_data | tojson | safe }}
-        {# 'tojson' zaten JSON güvenli bir string ürettiği için 'safe' filtresi gereklidir #}
-        {# ve bu stringin HTML olarak escape edilmemesi gerekir. #}
     </script>
     {% endif %}
 
-    {# Now use those data attributes and the JSON script tag in pure JavaScript #}
+    {# Use pure JavaScript to read the data - This block should not cause IDE errors #}
     <script>
+    // Wait for the DOM and deferred scripts to be ready
     document.addEventListener('DOMContentLoaded', function() {
-        console.log("index.html: DOMContentLoaded - Initializing window.stockData");
+        console.log("index.html: DOMContentLoaded - Initializing window.stockData using JSON script tag method.");
 
         const dataElement = document.getElementById('flask-data');
-        const stockSymbol = dataElement.dataset.stock || null;
-        const hasError = dataElement.dataset.hasError === 'true';
+        const stockSymbol = dataElement ? dataElement.dataset.stock : null; // Check if dataElement exists
+        const hasError = dataElement ? dataElement.dataset.hasError === 'true' : false; // Default to false if element missing
         let initialStockData = null;
         const stockDataScript = document.getElementById('stock-data-json');
 
-        if (stockDataScript && !hasError) { // Sadece script etiketi varsa ve Flask hatası yoksa parse et
+        if (stockDataScript && !hasError) {
             try {
-                // Script etiketinin text içeriğini (artık geçerli JSON olmalı) parse et
+                // Parse the text content of the JSON script tag
                 initialStockData = JSON.parse(stockDataScript.textContent);
                 console.log("Successfully parsed stock data from JSON script tag.");
             } catch (e) {
-                console.error("Error parsing stock data JSON:", e);
-                // Hata ayıklama için sorunlu içeriği logla
-                // console.error("Problematic JSON content:", stockDataScript.textContent);
-                initialStockData = null; // Parse hatasında null yap
-                showFlashMessage("Error processing stock data structure.", "danger");
+                console.error("Error parsing stock data JSON from script tag:", e);
+                // console.error("Content:", stockDataScript.textContent); // Log content on error
+                initialStockData = null;
+                if (typeof showFlashMessage === 'function') { // Check if function exists
+                     showFlashMessage("Error processing stock data structure.", "danger");
+                }
             }
         } else if (!stockDataScript && stockSymbol && !hasError) {
-             console.warn("index.html: JSON script tag not found, but stock symbol exists and no error reported.");
-             // Bu durum stock_data boş ama None/error değilse olabilir
+             console.warn("index.html: JSON script tag not found, but stock symbol exists and no Flask error reported.");
         }
 
-        // Parse edilen veri ve hata durumuna göre başlat
-        if (initialStockData && !hasError) {
-            try {
-                initializeStockData(initialStockData);
-            } catch (e) {
-                console.error("Error initializing stock data:", e);
-                setEmptyStockData();
-                showFlashMessage("Failed to initialize stock data.", "danger");
-            }
-        } else if (hasError) {
-            console.warn("index.html: Flask reported an error, setting empty stock data.");
-            setEmptyStockData();
+        // Initialize based on parsed data and error status
+        // Check if the initializer functions are defined before calling
+        if (typeof initializeStockData === 'function' && typeof setEmptyStockData === 'function') {
+             if (initialStockData && !hasError) {
+                 try {
+                     initializeStockData(initialStockData);
+                 } catch (e) {
+                     console.error("Error initializing stock data:", e);
+                     setEmptyStockData();
+                      if (typeof showFlashMessage === 'function') {
+                         showFlashMessage("Failed to initialize stock data.", "danger");
+                      }
+                 }
+             } else if (hasError) {
+                 console.warn("index.html: Flask reported an error, setting empty stock data.");
+                 setEmptyStockData();
+             } else {
+                 console.log("index.html: No valid initial stock data found or no stock selected.");
+                 setEmptyStockData();
+             }
         } else {
-            console.log("index.html: No valid initial stock data found or no stock selected.");
-            setEmptyStockData();
+             console.error("stock-data-loader.js functions (initializeStockData or setEmptyStockData) not found!");
         }
     });
     </script>

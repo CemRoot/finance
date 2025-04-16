@@ -6,28 +6,24 @@
     <title>{% block title %}Financial Analysis Dashboard{% endblock %}</title>
 
     <!-- Bootstrap CSS -->
-    {# *** FIX: Removed integrity and crossorigin *** #}
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Font Awesome -->
-     {# *** FIX: Removed integrity, crossorigin, referrerpolicy *** #}
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"/>
     <!-- Custom CSS -->
     <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/style.css') }}">
 
     {# --- Charting Libraries --- #}
-    {# *** FIX: Removed integrity and crossorigin from all script tags below *** #}
+    {# *** FIX: Add defer attribute *** #}
     <!-- Chart.js -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js" defer></script>
     <!-- Luxon -->
-    <script src="https://cdn.jsdelivr.net/npm/luxon@3.4.4/build/global/luxon.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/luxon@3.4.4/build/global/luxon.min.js" defer></script>
     <!-- Chart.js Adapter Luxon -->
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1/dist/chartjs-adapter-luxon.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1/dist/chartjs-adapter-luxon.min.js" defer></script>
     <!-- Chart.js Financial plugin -->
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@0.1.1/dist/chartjs-chart-financial.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@0.1.1/dist/chartjs-chart-financial.min.js" defer></script>
     <!-- Plotly.js -->
-     {# *** FIX: Use specific version for Plotly *** #}
-    <script src='https://cdn.plot.ly/plotly-2.29.1.min.js'></script>
-
+    <script src='https://cdn.plot.ly/plotly-2.29.1.min.js' defer></script>
 
     {% block head_extra %}{% endblock %}
 </head>
@@ -51,16 +47,18 @@
 
     {# --- Page Bottom Scripts --- #}
     <!-- Bootstrap JS Bundle -->
-     {# *** FIX: Removed integrity and crossorigin *** #}
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js" defer></script> {# Optional: defer BS too #}
 
+    {# *** FIX: Add defer attribute to custom scripts too *** #}
     <!-- Custom JS Files -->
-    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/stock-data-loader.js') }}"></script> {# Ensure loader is before scripts using it #}
-    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/forecast.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/stock-data-loader.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/script.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/forecast.js') }}" defer></script>
 
     <!-- Page-Specific Scripts Block -->
+    {# Inline scripts in blocks are generally executed where they appear #}
+    {# Defer doesn't apply directly here, but it will run after deferred scripts loaded in head/body #}
     {% block scripts %}{% endblock %}
 
 </body>
