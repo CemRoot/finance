@@ -6,21 +6,22 @@ import src.decision as decision # Decision module
 import src.forecasting as forecasting # Forecasting module
 import src.sentiment as sentiment # Sentiment module
 import json
-import pandas as pd
-import numpy as np
-from datetime import datetime, timedelta
+# *** FIX: Correct datetime import ***
+from datetime import datetime, timedelta # Import specific classes
 import time
 from functools import wraps
 import logging
 import os
 import pytz
+import pandas as pd
+import numpy as np
 import pandas_ta as ta # Technical Analysis library
 import jinja2 # Import jinja2 for exception handling
 
 # Flask Application and Cache Configuration
 app = Flask(__name__)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'dev-secret-key-should-be-changed')
-cache_config = { "CACHE_TYPE": "SimpleCache", "CACHE_DEFAULT_TIMEOUT": 300 } # 5 minutes default cache
+cache_config = { "CACHE_TYPE": "SimpleCache", "CACHE_DEFAULT_TIMEOUT": 300 }
 cache = Cache(config=cache_config)
 cache.init_app(app)
 
@@ -28,7 +29,7 @@ cache.init_app(app)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
 app.logger.handlers.clear()
 handler = logging.StreamHandler()
-formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s - [%(funcName)s] - %(message)s') # Added function name
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s - [%(funcName)s] - %(message)s')
 handler.setFormatter(formatter)
 app.logger.addHandler(handler)
 app.logger.setLevel(logging.INFO)
@@ -43,7 +44,7 @@ def cached_get_stock_data(symbol):
 @cache.memoize()
 def cached_get_news(symbol):
     app.logger.info(f"CACHE MISS or expired for get_news({symbol}). Calling API.")
-    return newsapi.get_news(symbol, lang='en') # Fetch English news
+    return newsapi.get_news(symbol, lang='en')
 
 # --- Jinja2 Filters ---
 @app.template_filter('calculate_average')
@@ -82,7 +83,7 @@ def format_date(value, format_str='%d %b %Y'):
     if not value: return ''
     try:
         dt_obj = None
-        if isinstance(value, datetime): dt_obj = value
+        if isinstance(value, datetime): dt_obj = value # Use datetime class directly
         elif isinstance(value, str):
             try: dt_obj = pd.to_datetime(value, errors='raise').to_pydatetime()
             except ValueError: app.logger.debug(f"format_date: Could not parse date string '{value}'"); return value
@@ -92,24 +93,20 @@ def format_date(value, format_str='%d %b %Y'):
         return dt_obj.strftime(format_str)
     except Exception as e: app.logger.error(f"Error formatting date '{value}': {e}", exc_info=False); return str(value)
 
-# Register filters and globals
+# Register filters and globals (removed 'now' lambda)
 app.jinja_env.filters['calculate_average'] = calculate_average
 app.jinja_env.filters['safe_sum'] = safe_sum
 app.jinja_env.filters['variance'] = calculate_variance
 app.jinja_env.filters['format_number'] = format_number
 app.jinja_env.filters['format_date'] = format_date
+# *** FIX: Ensure 'datetime' class is available if needed by filters/templates ***
+# Pass the actual datetime class, not the module
 app.jinja_env.globals.update(abs=abs, len=len, isinstance=isinstance, float=float, int=int, str=str, list=list, dict=dict, datetime=datetime, max=max, min=min, round=round)
+
 # --- Main Route ---
 @app.route('/', methods=['GET', 'POST'])
 def index():
     stock_symbol = session.get('last_symbol', None)
-    stock_data = None
-    articles = []
-    tech_indicators = {} # Initialize empty
-    avg_sentiment = 0.0 # Initialize default sentiment
-    decision_result = "Analysis Pending" # Default status
-    error_occurred = False
-    error_message = None
 
     # --- Handle POST request (Search) ---
     if request.method == 'POST':
@@ -120,13 +117,10 @@ def index():
         else:
             session['last_symbol'] = stock_symbol_form
             app.logger.info(f"POST request for {stock_symbol_form}. Redirecting to GET after clearing cache.")
-            # Clear relevant caches
             cache_key_data = f"cached_get_stock_data_{stock_symbol_form}"
             cache_key_news = f"cached_get_news_{stock_symbol_form}"
             cache_key_forecast = f"forecast_{stock_symbol_form}"
-            cache.delete(cache_key_data)
-            cache.delete(cache_key_news)
-            cache.delete(cache_key_forecast)
+            cache.delete(cache_key_data); cache.delete(cache_key_news); cache.delete(cache_key_forecast)
             return redirect(url_for('index', stock=stock_symbol_form))
 
     # --- Process GET request ---
@@ -135,7 +129,20 @@ def index():
         stock_symbol = stock_symbol_arg.strip().upper()
         session['last_symbol'] = stock_symbol
     elif not stock_symbol:
-        return render_template('index.html', stock=None) # Show welcome screen
+        # *** FIX: Define current_time even for welcome screen ***
+        current_utc_time = datetime.utcnow().replace(tzinfo=pytz.utc)
+        return render_template('index.html', stock=None, current_time=current_utc_time) # Pass current_time
+
+    # --- Define variables with defaults BEFORE the main try block ---
+    stock_data = None
+    articles = []
+    tech_indicators = {}
+    avg_sentiment = 0.0
+    decision_result = "Analysis Pending"
+    error_occurred = False
+    error_message = None
+    # *** FIX: Define current_time HERE, before try block ***
+    current_utc_time = datetime.utcnow().replace(tzinfo=pytz.utc)
 
     app.logger.info(f"Processing GET request for symbol: {stock_symbol}")
 
@@ -150,46 +157,54 @@ def index():
 
         # 2. Calculate Technical Indicators (if stock_data is valid)
         try:
+            # Create DataFrame (Ensure correct date parsing format if needed)
             df = pd.DataFrame({
-                'Open': stock_data.get('open_values'), 'High': stock_data.get('high_values'),
-                'Low': stock_data.get('low_values'), 'Close': stock_data.get('values'),
-                'Volume': stock_data.get('volume_values')
-            }, index=pd.to_datetime(stock_data.get('labels'), format='ISO8601', errors='coerce'))
-            df = df[pd.notna(df.index)]
-            df.dropna(subset=['Close'], inplace=True)
+                 'Open': stock_data.get('open_values'), 'High': stock_data.get('high_values'),
+                 'Low': stock_data.get('low_values'), 'Close': stock_data.get('values'),
+                 'Volume': stock_data.get('volume_values')
+             }, index=pd.to_datetime(stock_data.get('labels'), format='ISO8601', errors='coerce')) # Using ISO format
+            df = df[pd.notna(df.index)] # Remove rows with invalid dates
+            df.dropna(subset=['Close'], inplace=True) # Remove rows with NaN close price
 
             if not df.empty:
-                app.logger.info(f"Calculating TA indicators for {stock_symbol} with {len(df)} data points.")
-                min_rows_for_full_ta = 20
-                # Calculate Volatility
-                if len(df) >= 2:
-                    df['returns'] = df['Close'].pct_change()
-                    std_dev = df['returns'].std()
-                    tech_indicators['volatility'] = std_dev * np.sqrt(252) if pd.notna(std_dev) else None
-                # Calculate other indicators
-                if len(df) >= min_rows_for_full_ta:
-                    df.ta.sma(length=20, append=True); df.ta.rsi(length=14, append=True)
-                    df.ta.macd(fast=12, slow=26, signal=9, append=True); df.ta.bbands(length=20, std=2, append=True)
-                    last = df.iloc[-1]
-                    cp = last.get('Close'); sma20 = last.get('SMA_20'); rsi14 = last.get('RSI_14')
-                    macd = last.get('MACD_12_26_9'); macds = last.get('MACDs_12_26_9'); macdh = last.get('MACDh_12_26_9')
-                    bbl = last.get('BBL_20_2.0'); bbu = last.get('BBU_20_2.0'); bbm = last.get('BBM_20_2.0')
-                    if pd.notna(cp) and pd.notna(sma20): tech_indicators['sma'] = 'Above' if cp > sma20 else ('Below' if cp < sma20 else 'Equal')
-                    if pd.notna(rsi14): tech_indicators['rsi'] = 'Overbought' if rsi14 > 70 else ('Oversold' if rsi14 < 30 else 'Neutral')
-                    if pd.notna(macd) and pd.notna(macds): tech_indicators['macd'] = 'Buy Signal (Positive)' if macd > macds else 'Sell Signal (Negative)'
-                    if pd.notna(macdh): tech_indicators['macd_hist'] = float(round(macdh, 3))
-                    if pd.notna(cp) and pd.notna(bbl) and pd.notna(bbu):
-                        if cp < bbl: tech_indicators['bbands'] = 'Below Lower Band'
-                        elif cp > bbu: tech_indicators['bbands'] = 'Above Upper Band'
-                        else: tech_indicators['bbands'] = 'Inside Bands'
-                    if pd.notna(bbm): tech_indicators['bbands_mid'] = float(round(bbm, 2))
-                else: app.logger.warning(f"Insufficient data ({len(df)} rows) for full TA for {stock_symbol}"); flash(f"Limited data available for {stock_symbol}, some indicators might be missing.", 'info')
-            else: app.logger.warning(f"DataFrame empty after cleaning for {stock_symbol}. Skipping TA.")
+                 app.logger.info(f"Calculating TA indicators for {stock_symbol} with {len(df)} data points.")
+                 min_rows_for_full_ta = 20 # Minimum rows for SMA(20), MACD, BBands(20)
+
+                 # Calculate Volatility
+                 if len(df) >= 2:
+                     df['returns'] = df['Close'].pct_change()
+                     std_dev = df['returns'].std()
+                     tech_indicators['volatility'] = std_dev * np.sqrt(252) if pd.notna(std_dev) else None
+
+                 # Calculate other indicators if enough data
+                 if len(df) >= min_rows_for_full_ta:
+                     df.ta.sma(length=20, append=True); df.ta.rsi(length=14, append=True)
+                     df.ta.macd(fast=12, slow=26, signal=9, append=True); df.ta.bbands(length=20, std=2, append=True)
+                     last = df.iloc[-1] # Get the last row
+                     # Safely get values using .get()
+                     cp = last.get('Close'); sma20 = last.get('SMA_20'); rsi14 = last.get('RSI_14')
+                     macd = last.get('MACD_12_26_9'); macds = last.get('MACDs_12_26_9'); macdh = last.get('MACDh_12_26_9')
+                     bbl = last.get('BBL_20_2.0'); bbu = last.get('BBU_20_2.0'); bbm = last.get('BBM_20_2.0')
+                     # Assign to tech_indicators dict with checks
+                     if pd.notna(cp) and pd.notna(sma20): tech_indicators['sma'] = 'Above' if cp > sma20 else ('Below' if cp < sma20 else 'Equal')
+                     if pd.notna(rsi14): tech_indicators['rsi'] = 'Overbought' if rsi14 > 70 else ('Oversold' if rsi14 < 30 else 'Neutral')
+                     if pd.notna(macd) and pd.notna(macds): tech_indicators['macd'] = 'Buy Signal (Positive)' if macd > macds else 'Sell Signal (Negative)'
+                     if pd.notna(macdh): tech_indicators['macd_hist'] = float(round(macdh, 3))
+                     if pd.notna(cp) and pd.notna(bbl) and pd.notna(bbu):
+                         if cp < bbl: tech_indicators['bbands'] = 'Below Lower Band'
+                         elif cp > bbu: tech_indicators['bbands'] = 'Above Upper Band'
+                         else: tech_indicators['bbands'] = 'Inside Bands'
+                     if pd.notna(bbm): tech_indicators['bbands_mid'] = float(round(bbm, 2))
+                 else:
+                     app.logger.warning(f"Insufficient data ({len(df)} rows) for full TA for {stock_symbol}")
+                     flash(f"Limited data available for {stock_symbol}, some indicators might be missing.", 'info')
+            else:
+                 app.logger.warning(f"DataFrame empty after cleaning for {stock_symbol}. Skipping TA.")
 
         except Exception as ta_error:
-            app.logger.error(f"Error calculating technical indicators for {stock_symbol}: {ta_error}", exc_info=True)
-            flash(f"Warning: Could not calculate technical indicators for {stock_symbol}.", 'warning')
-            tech_indicators = {} # Ensure it's empty on error
+             app.logger.error(f"Error calculating technical indicators for {stock_symbol}: {ta_error}", exc_info=True)
+             flash(f"Warning: Could not calculate technical indicators for {stock_symbol}.", 'warning')
+             tech_indicators = {} # Ensure it's empty on error
 
         # 3. Get News
         articles = cached_get_news(stock_symbol)
@@ -213,7 +228,6 @@ def index():
                  # avg_sentiment remains 0.0
 
         # 5. Make Decision (using combined indicators and sentiment)
-        # *** This now calls the combined decision function ***
         try:
             # Pass the calculated indicators and sentiment score
             decision_result = decision.make_decision_with_indicators(tech_indicators, avg_sentiment)
@@ -232,17 +246,18 @@ def index():
         stock_data = None; articles = []; tech_indicators = {}; decision_result = "Error"
     except Exception as e: # Catch all other unexpected errors
         error_occurred = True
-        error_message = f"An unexpected server error occurred while processing the request for {stock_symbol}."
-        app.logger.error(f"Unexpected error in index route for {stock_symbol}: {type(e).__name__} - {str(e)}", exc_info=True)
+        error_message = f"An unexpected server error occurred." # Generic message for user
+        app.logger.error(f"Unexpected error processing {stock_symbol}: {type(e).__name__} - {str(e)}", exc_info=True)
+        # Check specifically for Jinja errors during error handling itself
         if isinstance(e, jinja2.exceptions.TemplateError):
-            error_message = f"Error rendering the page template for {stock_symbol}."
+            error_message = f"Template rendering error." # More specific for template issues
             app.logger.error(f"Jinja Template Error: {e.message} (Template: {getattr(e, 'filename', 'N/A')}, Line: {getattr(e, 'lineno', 'N/A')})")
         flash(error_message, 'danger')
         stock_data = None; articles = []; tech_indicators = {}; decision_result = "Error"
 
 
     # --- Prepare Context and Render ---
-    current_utc_time = datetime.utcnow().replace(tzinfo=pytz.utc)
+    # 'current_utc_time' is now defined above, before the try block
     context = {
         'stock': stock_symbol,
         'stock_data': stock_data, # Will be None if error occurred
@@ -251,43 +266,33 @@ def index():
         'error_message': error_message,
         'decision': decision_result,
         'tech_indicators': tech_indicators,
-        'current_time': current_utc_time # Pass the object directly
+        'current_time': current_utc_time # Pass the object (always defined)
     }
     return render_template('index.html', **context)
 
 
-# --- AJAX / Data Endpoints ---
-
+# --- AJAX / Data Endpoints --- (Keep previous versions)
 @app.route('/refresh_stock')
 def refresh_stock():
-    """ Endpoint called via AJAX. Refreshes stock data, bypassing the cache. """
     stock = request.args.get("stock")
     if not stock: return jsonify({"status": "error", "message": "Stock symbol is required"}), 400
     app.logger.info(f"AJAX request to REFRESH stock data for: {stock}")
     try:
-        stock_data = newsapi.get_stock_data(stock) # Fetch fresh data
+        stock_data = newsapi.get_stock_data(stock)
         if stock_data.get('error'):
             error_msg = stock_data['error']; status_code = 500
             if "not found" in error_msg.lower() or "invalid" in error_msg.lower(): status_code = 404
             elif "rate limit" in error_msg.lower(): status_code = 429
             return jsonify({"status": "error", "message": error_msg}), status_code
-        elif not stock_data or not stock_data.get('labels'):
-             return jsonify({"status": "error", "message": f"Refreshed data for {stock} is incomplete."}), 404
-        else:
-             cache_key = f"cached_get_stock_data_{stock}"; cache.set(cache_key, stock_data) # Update cache
-             app.logger.info(f"Cache updated for {stock} after refresh.")
-             return jsonify({"status": "success", "stock_data": stock_data }) # Return fresh data
-    except Exception as e:
-        app.logger.error(f"Server error during stock refresh ({stock}): {str(e)}", exc_info=True)
-        return jsonify({"status": "error", "message": "Server error while refreshing stock data."}), 500
+        elif not stock_data or not stock_data.get('labels'): return jsonify({"status": "error", "message": f"Refreshed data for {stock} is incomplete."}), 404
+        else: cache_key = f"cached_get_stock_data_{stock}"; cache.set(cache_key, stock_data); app.logger.info(f"Cache updated for {stock} after refresh."); return jsonify({"status": "success", "stock_data": stock_data })
+    except Exception as e: app.logger.error(f"Server error during stock refresh ({stock}): {str(e)}", exc_info=True); return jsonify({"status": "error", "message": "Server error while refreshing stock data."}), 500
 
 @app.route('/get_forecast_data', methods=['GET'])
 def get_forecast_data():
-    """ Endpoint called via AJAX. Returns Prophet forecast data. (Uses cache) """
     symbol = request.args.get('symbol')
     if not symbol: return jsonify({'error': 'Stock symbol is required.'}), 400
-    cache_key = f"forecast_{symbol}"
-    cached_result = cache.get(cache_key)
+    cache_key = f"forecast_{symbol}"; cached_result = cache.get(cache_key)
     if cached_result: app.logger.info(f"Returning cached forecast data for {symbol}"); return jsonify(cached_result)
     app.logger.info(f"CACHE MISS for forecast data: {symbol}. Generating forecast...")
     try:
@@ -299,38 +304,22 @@ def get_forecast_data():
             elif "rate limit" in error_msg.lower(): status_code = 429
             return jsonify({'error': error_msg}), status_code
         else:
-            forecast_result['timestamp'] = datetime.now(pytz.utc).strftime('%Y-%m-%dT%H:%M:%S.000Z')
-            cache.set(cache_key, forecast_result, timeout=3600) # Cache for 1 hour
-            app.logger.info(f"Successfully generated forecast for {symbol}.")
+            forecast_result['timestamp'] = datetime.utcnow().replace(tzinfo=pytz.utc).strftime('%Y-%m-%dT%H:%M:%S.000Z') # Use correct class
+            cache.set(cache_key, forecast_result, timeout=3600); app.logger.info(f"Successfully generated forecast for {symbol}.")
             return jsonify(forecast_result)
-    except Exception as e:
-        app.logger.error(f"Forecast endpoint error ({symbol}): {str(e)}", exc_info=True)
-        return jsonify({'error': f"Server error while generating forecast for {symbol}."}), 500
+    except Exception as e: app.logger.error(f"Forecast endpoint error ({symbol}): {str(e)}", exc_info=True); return jsonify({'error': f"Server error while generating forecast for {symbol}."}), 500
 
-# --- Added Cache Clearing Endpoint ---
 @app.route('/clear_cache')
 def clear_cache_key():
-    """ Clears a specific cache key. Used by JS refresh buttons. """
     key = request.args.get('key')
     if key:
         try:
-            # Construct potential prefixed key (if Flask-Caching uses one)
-            prefix = cache.config.get('CACHE_KEY_PREFIX', '')
-            full_key_guess = prefix + key
-            deleted1 = cache.delete(key) # Try deleting raw key
-            deleted2 = cache.delete(full_key_guess) # Try deleting prefixed key
-
-            if deleted1 or deleted2:
-                app.logger.info(f"Cache key '{key}' (or prefixed version) deleted via API request.")
-                return jsonify({"status": "success", "message": f"Cache key '{key}' cleared."}), 200
-            else:
-                app.logger.warning(f"Cache key '{key}' (or prefixed version) not found for deletion.")
-                return jsonify({"status": "warning", "message": f"Cache key '{key}' not found."}), 404
-        except Exception as e:
-            app.logger.error(f"Error deleting cache key '{key}': {e}", exc_info=True)
-            return jsonify({"status": "error", "message": "Error clearing cache key."}), 500
-    else:
-        return jsonify({"status": "error", "message": "No cache key provided."}), 400
+            prefix = cache.config.get('CACHE_KEY_PREFIX', ''); full_key_guess = prefix + key
+            deleted1 = cache.delete(key); deleted2 = cache.delete(full_key_guess)
+            if deleted1 or deleted2: app.logger.info(f"Cache key '{key}' deleted via API."); return jsonify({"status": "success", "message": f"Cache key '{key}' cleared."}), 200
+            else: app.logger.warning(f"Cache key '{key}' not found for deletion."); return jsonify({"status": "warning", "message": f"Cache key '{key}' not found."}), 404
+        except Exception as e: app.logger.error(f"Error deleting cache key '{key}': {e}", exc_info=True); return jsonify({"status": "error", "message": "Error clearing cache key."}), 500
+    else: return jsonify({"status": "error", "message": "No cache key provided."}), 400
 
 
 # --- Main Execution Block ---
