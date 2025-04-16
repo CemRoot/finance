@@ -1,58 +1,79 @@
 {# templates/partials/_sidebar.html #}
-<div class="sidebar-header pt-3 pb-2 mb-3 border-bottom px-3">
-    <a href="{{ url_for('index') }}" class="text-decoration-none text-dark">
-        <h5 class="mb-3 text-center">Financial Dashboard</h5>
-        <hr class="my-2">
+
+{# Header section of the sidebar #}
+<div class="sidebar-header pt-3 pb-2 mb-3 border-bottom px-3 text-center"> {# Added text-center #}
+    <a href="{{ url_for('index') }}" class="text-decoration-none text-dark d-block"> {# Make link block for easier clicking #}
+        <i class="fas fa-chart-pie fa-2x text-primary mb-2"></i> {# Changed icon, increased size #}
+        <h5 class="mb-0 fw-bold">Finance Dash</h5> {# Simplified title #}
     </a>
+    <hr class="my-3"> {# Increased margin #}
 </div>
+
+{# Search bar section #}
 <div class="sidebar-search px-3 mb-3">
-    <form method="POST" action="{{ url_for('index') }}" id="searchForm">
+    {# The form submits to the main index route using POST #}
+    <form method="POST" action="{{ url_for('index') }}" id="searchForm" role="search">
+        <label for="stock" class="form-label visually-hidden">Stock Symbol</label> {# Added label for accessibility #}
         <div class="input-group input-group-sm mb-2">
-            <input type="text" id="stock" name="stock" class="form-control" placeholder="Enter Symbol (AAPL)" value="{{ session.get('last_symbol', '') }}" required>
+            <input type="text" id="stock" name="stock" class="form-control" placeholder="Enter Symbol (e.g., AAPL)" value="{{ session.get('last_symbol', '') }}" required aria-label="Stock Symbol Search">
+             <button type="submit" class="btn btn-primary" title="Search Symbol"> {# Removed btn-sm for default size #}
+                 <i class="fas fa-search"></i>
+                 <span class="visually-hidden">Search</span> {# Accessibility text #}
+             </button>
         </div>
-        <button type="submit" class="btn btn-primary btn-sm w-100"><i class="fas fa-search me-1"></i> Search</button>
     </form>
-    <hr class="my-2">
+    <hr class="my-3">
 </div>
-{# Navigasyon #}
-<ul class="nav nav-pills nav-sidebar flex-column" id="sidebarTabs" role="tablist">
+
+{# Main Navigation Tabs #}
+{# Uses Bootstrap nav-pills for styling and tab functionality trigger #}
+<ul class="nav nav-pills nav-sidebar flex-column mb-auto" id="sidebarTabs" role="tablist"> {# mb-auto pushes footer down #}
+    {# Overview Tab Link #}
     <li class="nav-item" role="presentation">
+        {# Targets the #overview content pane in index.html #}
         <a class="nav-link active" id="overview-tab" data-bs-toggle="tab" href="#overview" role="tab" aria-controls="overview" aria-selected="true">
-            <i class="fas fa-chart-line me-1"></i> Overview
+            <i class="fas fa-chart-line fa-fw me-2"></i> Overview
         </a>
     </li>
+    {# News Tab Link #}
     <li class="nav-item" role="presentation">
+         {# Targets the #news content pane in index.html #}
         <a class="nav-link" id="news-tab" data-bs-toggle="tab" href="#news" role="tab" aria-controls="news" aria-selected="false">
-            <i class="fas fa-newspaper me-1"></i> News
+            <i class="fas fa-newspaper fa-fw me-2"></i> News
         </a>
     </li>
+    {# Details Tab Link (Leads to placeholder content) #}
     <li class="nav-item" role="presentation">
+         {# Targets the #details content pane in index.html #}
         <a class="nav-link" id="details-tab" data-bs-toggle="tab" href="#details" role="tab" aria-controls="details" aria-selected="false">
-            <i class="fas fa-search me-1"></i> Detailed Analysis
+            <i class="fas fa-binoculars fa-fw me-2"></i> Details {# Changed Icon #}
         </a>
     </li>
+    {# Forecasting Tab Link #}
     <li class="nav-item" role="presentation">
+         {# Targets the #forecasting content pane in index.html #}
         <a class="nav-link" id="forecasting-tab" data-bs-toggle="tab" href="#forecasting" role="tab" aria-controls="forecasting" aria-selected="false">
-            <i class="fas fa-robot me-1"></i> Forecasts
+            <i class="fas fa-robot fa-fw me-2"></i> Forecast
         </a>
     </li>
 </ul>
 
-{# Dil Seçici #}
-<div class="mt-auto px-3 pt-3"> {# mt-auto ile alta yasla #}
+{# --- Language Selector Placeholder (Currently non-functional) --- #}
+{# Kept for structure but marked as inactive #}
+{# <div class="mt-auto px-3 pt-3">
     <div class="nav-item dropdown">
-        <a class="nav-link dropdown-toggle active text-light" href="#" id="languageDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">
+        <a class="nav-link dropdown-toggle text-secondary disabled" href="#" id="languageDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false" aria-disabled="true">
             <i class="fas fa-language me-1"></i> English
         </a>
         <ul class="dropdown-menu dropdown-menu-dark" aria-labelledby="languageDropdown">
-            <li><a class="dropdown-item text-light" href="#">English</a></li>
-            {# Language selection has been removed as part of simplification #}
+            <li><a class="dropdown-item active" href="#">English</a></li>
+            {# Add other languages here if feature is re-enabled #}
+            {# Example: <li><a class="dropdown-item" href="{{ url_for('set_language', lang='tr') }}">Türkçe</a></li> #}
         </ul>
     </div>
-</div>
+</div> #}
 
-{# Footer #}
-<div class="sidebar-footer px-3 py-2 text-center text-muted small">
-    <hr class="my-2">
-    <span> {{ now().year }} Financial Dashboard</span>
+{# Sidebar Footer #}
+<div class="sidebar-footer px-3 py-2 text-center text-muted small border-top mt-3"> {# Added border-top and mt-3 #}
+    © {{ now().year }} Finance Dash
 </div>
