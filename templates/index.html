@@ -73,70 +73,67 @@
     {# Include the script that initializes the global window.stockData variable #}
     <script src="{{ url_for('static', filename='js/stock-data-loader.js') }}"></script>
 
-    {# Pass data from Flask to JavaScript using data attributes instead of embedding Jinja in JS #}
-    <div id="flask-data" 
+    {# Pass data from Flask to JavaScript using data attributes for simple flags #}
+    <div id="flask-data"
         data-stock="{% if stock %}{{ stock }}{% else %}{% endif %}"
         data-has-error="{% if error %}true{% else %}false{% endif %}"
         style="display:none;">
     </div>
 
+    {# Embed the main stock_data object as JSON in a script tag #}
     {% if stock_data and not error %}
     <script id="stock-data-json" type="application/json">
-        {{ stock_data | safe }}
+        {# *** DÜZELTME: Python dict'ini JSON'a doğru şekilde serileştirmek için tojson filtresini kullanın *** #}
+        {{ stock_data | tojson | safe }}
+        {# 'tojson' zaten JSON güvenli bir string ürettiği için 'safe' filtresi gereklidir #}
+        {# ve bu stringin HTML olarak escape edilmemesi gerekir. #}
     </script>
     {% endif %}
-    
-    {# Now use those data attributes in pure JavaScript #}
+
+    {# Now use those data attributes and the JSON script tag in pure JavaScript #}
     <script>
     document.addEventListener('DOMContentLoaded', function() {
         console.log("index.html: DOMContentLoaded - Initializing window.stockData");
-        
-        // Get data from the hidden div element
+
         const dataElement = document.getElementById('flask-data');
         const stockSymbol = dataElement.dataset.stock || null;
         const hasError = dataElement.dataset.hasError === 'true';
-        
-        // Get stock data from the JSON script tag if it exists
         let initialStockData = null;
         const stockDataScript = document.getElementById('stock-data-json');
-        if (stockDataScript) {
+
+        if (stockDataScript && !hasError) { // Sadece script etiketi varsa ve Flask hatası yoksa parse et
             try {
+                // Script etiketinin text içeriğini (artık geçerli JSON olmalı) parse et
                 initialStockData = JSON.parse(stockDataScript.textContent);
+                console.log("Successfully parsed stock data from JSON script tag.");
             } catch (e) {
                 console.error("Error parsing stock data JSON:", e);
+                // Hata ayıklama için sorunlu içeriği logla
+                // console.error("Problematic JSON content:", stockDataScript.textContent);
+                initialStockData = null; // Parse hatasında null yap
+                showFlashMessage("Error processing stock data structure.", "danger");
             }
+        } else if (!stockDataScript && stockSymbol && !hasError) {
+             console.warn("index.html: JSON script tag not found, but stock symbol exists and no error reported.");
+             // Bu durum stock_data boş ama None/error değilse olabilir
         }
-        
+
+        // Parse edilen veri ve hata durumuna göre başlat
         if (initialStockData && !hasError) {
             try {
-                // Use the initializer function from stock-data-loader.js
                 initializeStockData(initialStockData);
             } catch (e) {
-                console.error("Error processing initial stock data:", e);
-                // Set to null if processing fails
+                console.error("Error initializing stock data:", e);
                 setEmptyStockData();
-                // Optionally show a flash message about the data issue
-                showFlashMessage("Failed to load initial stock data structure.", "danger");
+                showFlashMessage("Failed to initialize stock data.", "danger");
             }
         } else if (hasError) {
-            // If Flask reported an error, ensure JS knows there's no valid data
             console.warn("index.html: Flask reported an error, setting empty stock data.");
             setEmptyStockData();
         } else {
-            // No stock selected or other case where stock_data is not available
-            console.log("index.html: No initial stock data passed from Flask.");
+            console.log("index.html: No valid initial stock data found or no stock selected.");
             setEmptyStockData();
         }
-
-        // Trigger forecast load if forecast tab exists and stock symbol is present
-        // Note: forecast.js now handles its own loading based on symbol, this might be redundant
-        /*
-        const forecastTab = document.getElementById('forecasting');
-        if (forecastTab && stockSymbol) {
-            console.log("index.html: Triggering initial forecast load for " + stockSymbol);
-            loadForecastData(stockSymbol); // Assuming loadForecastData is globally available from forecast.js
-        }
-        */
     });
     </script>
 {% endblock %}
