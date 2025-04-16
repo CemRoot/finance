@@ -98,8 +98,7 @@ app.jinja_env.filters['safe_sum'] = safe_sum
 app.jinja_env.filters['variance'] = calculate_variance
 app.jinja_env.filters['format_number'] = format_number
 app.jinja_env.filters['format_date'] = format_date
-app.jinja_env.globals.update(abs=abs, len=len, now=lambda: datetime.utcnow().replace(tzinfo=pytz.utc), isinstance=isinstance, float=float, int=int, str=str, list=list, dict=dict, datetime=datetime, max=max, min=min, round=round)
-
+app.jinja_env.globals.update(abs=abs, len=len, isinstance=isinstance, float=float, int=int, str=str, list=list, dict=dict, datetime=datetime, max=max, min=min, round=round)
 # --- Main Route ---
 @app.route('/', methods=['GET', 'POST'])
 def index():
@@ -243,15 +242,16 @@ def index():
 
 
     # --- Prepare Context and Render ---
+    current_utc_time = datetime.utcnow().replace(tzinfo=pytz.utc)
     context = {
         'stock': stock_symbol,
         'stock_data': stock_data, # Will be None if error occurred
         'articles': articles,
         'error': error_occurred,
         'error_message': error_message,
-        'decision': decision_result, # The result from the combined function or error status
-        'tech_indicators': tech_indicators, # Pass calculated indicators
-        'now': datetime.utcnow().replace(tzinfo=pytz.utc)
+        'decision': decision_result,
+        'tech_indicators': tech_indicators,
+        'current_time': current_utc_time # Pass the object directly
     }
     return render_template('index.html', **context)
 
