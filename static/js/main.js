@@ -1,155 +1,121 @@
 // static/js/main.js
-console.log("main.js yüklendi.");
+console.log("main.js loaded.");
 
-// Popüler hisse senedi butonlarına tıklama olayını yönetir
+/**
+ * Populates the search input with the given stock symbol and submits the search form.
+ * Shows a loading indicator on the search button during submission.
+ *
+ * @param {string} symbol The stock symbol to load (e.g., 'AAPL').
+ */
 function loadStock(symbol) {
-    const stockInput = document.getElementById('stock');
-    const searchForm = document.getElementById('searchForm');
+    console.log(`loadStock called with symbol: ${symbol}`);
+    const stockInput = document.getElementById('stock'); // Target the search input
+    const searchForm = document.getElementById('searchForm'); // Target the search form
+    // Find the submit button within the form specifically
     const submitButton = searchForm ? searchForm.querySelector('button[type="submit"]') : null;
-    const buttonIcon = submitButton ? submitButton.querySelector('i') : null;
+    const buttonIcon = submitButton ? submitButton.querySelector('i') : null; // Find the icon within the button
 
-    if (stockInput && searchForm) {
-        stockInput.value = symbol; // Input alanını güncelle
+    // Ensure all required elements exist
+    if (stockInput && searchForm && submitButton && buttonIcon) {
+        stockInput.value = symbol; // Update the input field value
 
-        // Yükleme durumunu göster
-        if (submitButton && buttonIcon) {
-            buttonIcon.classList.remove('fa-search');
-            buttonIcon.classList.add('fa-spinner', 'fa-spin');
-            submitButton.disabled = true;
-        } else {
-            console.warn("Arama butonu veya ikonu bulunamadı.");
-        }
+        // Visually indicate loading state on the button
+        buttonIcon.classList.remove('fa-search'); // Remove search icon
+        buttonIcon.classList.add('fa-spinner', 'fa-spin'); // Add spinner icon
+        submitButton.disabled = true; // Disable button to prevent multiple clicks
+        console.log(`Set loading state for symbol: ${symbol}`);
 
-        // Kısa bir gecikmeyle formu gönder (spinner'ın görünmesi için)
+        // Submit the form programmatically after a short delay
+        // This allows the browser to render the loading state before navigation starts.
+        // The form uses POST, which redirects to GET via app.py's PRG pattern.
         setTimeout(() => {
-            searchForm.submit(); // Formu POST et (app.py'deki PRG modeline göre GET'e yönlenecek)
-        }, 100); // 100ms bekle
+            try {
+                console.log("Submitting search form...");
+                searchForm.submit();
+            } catch (e) {
+                // In case submit fails unexpectedly
+                console.error("Error submitting search form:", e);
+                // Reset button state on error
+                buttonIcon.classList.remove('fa-spinner', 'fa-spin');
+                buttonIcon.classList.add('fa-search');
+                submitButton.disabled = false;
+            }
+        }, 150); // 150ms delay
 
     } else {
-        console.error("loadStock: Gerekli elementler bulunamadı (stockInput veya searchForm).");
+        // Log an error if any required element is missing
+        console.error("loadStock: Could not find required elements (stock input, search form, submit button, or button icon).");
+        // Attempt to log which elements were found/missing
+        if (!stockInput) console.error("Missing: #stock input");
+        if (!searchForm) console.error("Missing: #searchForm");
+        if (!submitButton) console.error("Missing: submit button in #searchForm");
+        if (!buttonIcon) console.error("Missing: icon (<i>) in submit button");
     }
 }
 
-// Piyasa durumu rozetini periyodik olarak güncellemek için (Opsiyonel - Backend zaten veriyor)
-// Bu fonksiyon frontend tarafında saati kontrol ederek anlık durumu gösterir,
-// ancak backend'den gelen veri daha güvenilirdir.
-// function updateMarketStatusBadgeLocally() {
-//     const marketStatusBadge = document.querySelector('.market-status-badge');
-//     if (!marketStatusBadge) return;
-//     const marketIcon = marketStatusBadge.querySelector('i');
-
-//     try {
-//         // New York saatini al (Basit DST varsayımı)
-//         const now = new Date();
-//         const utcHour = now.getUTCHours();
-//         const month = now.getMonth(); // 0-11
-//         // Basit DST: Mart'ın 2. Pazarından Kasım'ın 1. Pazarına kadar (ABD kuralı)
-//         // Bu çok kaba bir tahmin, moment-timezone daha doğru olurdu.
-//         const isDST = (month > 1 && month < 10); // Mart-Ekim arası yaklaşık
-//         const nyOffset = isDST ? -4 : -5;
-//         const nyHour = (utcHour + nyOffset + 24) % 24;
-//         const nyMinutes = now.getUTCMinutes();
-//         const nyDay = now.getUTCDay(); // 0=Pazar, 6=Cumartesi
-
-//         // Piyasa açık mı? (Pazartesi-Cuma, 9:30 - 16:00 NY saati)
-//         const isOpen = nyDay >= 1 && nyDay <= 5 &&
-//                       (nyHour > 9 || (nyHour === 9 && nyMinutes >= 30)) &&
-//                       nyHour < 16;
-
-//         // Rozeti güncelle
-//         marketStatusBadge.classList.remove('bg-success', 'bg-secondary', 'text-white');
-//         marketStatusBadge.classList.add(isOpen ? 'bg-success' : 'bg-secondary');
-//         if (!isOpen) marketStatusBadge.classList.add('text-white');
-
-//         if (marketIcon) {
-//             marketIcon.classList.remove('fa-check-circle', 'fa-clock', 'fa-question-circle');
-//             marketIcon.classList.add(isOpen ? 'fa-check-circle' : 'fa-clock');
-//         }
-//         // İkonun yanındaki metni güncelle (varsa)
-//         const textNode = Array.from(marketStatusBadge.childNodes).find(node => node.nodeType === Node.TEXT_NODE);
-//         if (textNode) {
-//             textNode.nodeValue = ` Piyasa ${isOpen ? 'Açık' : 'Kapalı'}`;
-//         }
-
-
-//     } catch (e) {
-//         console.error("Error updating market status locally:", e);
-//          // Hata durumunda varsayılanı göster
-//          marketStatusBadge.classList.remove('bg-success', 'bg-secondary');
-//          marketStatusBadge.classList.add('bg-secondary', 'text-white');
-//           if (marketIcon) {
-//                marketIcon.classList.remove('fa-check-circle', 'fa-clock');
-//                marketIcon.classList.add('fa-question-circle');
-//           }
-//            const textNode = Array.from(marketStatusBadge.childNodes).find(node => node.nodeType === Node.TEXT_NODE);
-//            if (textNode) textNode.nodeValue = ' Piyasa Bilinmiyor';
-//     }
-// }
-
-// Belge yüklendiğinde olay dinleyicilerini başlat
+// --- DOMContentLoaded Event Listener ---
+// Executes code once the basic HTML structure is loaded.
 document.addEventListener('DOMContentLoaded', function() {
     console.log("main.js: DOMContentLoaded event fired.");
 
-    // Arama formu gönderildiğinde yükleme durumunu göster
+    // Add submit listener to the search form to show loading state
+    // (This handles cases where the user types and presses Enter/clicks Search manually)
     const searchForm = document.getElementById('searchForm');
     if (searchForm) {
-        searchForm.addEventListener('submit', function() {
+        searchForm.addEventListener('submit', function(event) {
+             // Check if the input is actually filled (basic validation)
+             const stockInput = document.getElementById('stock');
+             if (!stockInput || !stockInput.value.trim()) {
+                  console.log("Search form submitted with empty input. Preventing submission.");
+                  event.preventDefault(); // Prevent empty submission
+                  // Optionally show a message to the user
+                  stockInput?.focus(); // Focus the input field
+                  showFlashMessage("Please enter a stock symbol.", "warning"); // Use flash message utility
+                  return; // Stop processing
+             }
+
+             // If input is valid, show loading state
+             console.log("Search form submitted manually, showing loading state.");
              const submitButton = searchForm.querySelector('button[type="submit"]');
              const buttonIcon = submitButton ? submitButton.querySelector('i') : null;
              if (submitButton && buttonIcon) {
                  buttonIcon.classList.remove('fa-search');
                  buttonIcon.classList.add('fa-spinner', 'fa-spin');
                  submitButton.disabled = true;
-                 console.log("Search form submitted, showing spinner.");
              }
+             // Allow the form submission to proceed naturally
         });
+        console.log("Submit listener added to #searchForm.");
+    } else {
+         console.warn("main.js: Search form (#searchForm) not found. Submit listener not added.");
     }
 
-    // URL'deki 'stock' parametresine göre inputu doldur (sayfa yenilendiğinde)
-     const urlParams = new URLSearchParams(window.location.search);
-     const stockParam = urlParams.get('stock');
-     const stockInput = document.getElementById('stock');
-     if (stockParam && stockInput && !stockInput.value) { // Sadece input boşsa doldur
-         stockInput.value = stockParam;
-         console.log(`Stock input populated from URL param: ${stockParam}`);
+     // Optional: Populate search input from URL parameter on page load/refresh
+     // This helps maintain state if the page is reloaded with a stock parameter
+     try {
+         const urlParams = new URLSearchParams(window.location.search);
+         const stockParam = urlParams.get('stock');
+         const stockInput = document.getElementById('stock');
+         if (stockParam && stockInput && !stockInput.value) { // Only fill if input is currently empty
+             console.log(`Populating stock input from URL parameter: ${stockParam}`);
+             stockInput.value = stockParam;
+         }
+     } catch (e) {
+         console.error("Error processing URL parameters:", e);
      }
 
-     // Piyasa durumunu lokal olarak güncelle (opsiyonel, her dakika)
-     // Backend'den gelen veri daha güvenilir olduğu için bunu devredışı bırakabiliriz.
-     // updateMarketStatusBadgeLocally();
-     // setInterval(updateMarketStatusBadgeLocally, 60000); // Her 60 saniyede bir
-
-     // Bootstrap Tooltip'lerini etkinleştir (varsa)
+     // Initialize Bootstrap Tooltips (can be done here or in script.js, ensure it's done once)
+     // If script.js already does this, remove it from here.
+     /*
      const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-     tooltipTriggerList.map(function (tooltipTriggerEl) {
-       return new bootstrap.Tooltip(tooltipTriggerEl);
-     });
-
-     // Sidebar aktif linkini ayarla (Bootstrap bunu nav-pills ile otomatik yapar)
-     // Eğer sayfa yenilendiğinde aktif sekme kayboluyorsa, localStorage ile saklanabilir.
-     const sidebarLinks = document.querySelectorAll('#v-pills-tab .nav-link');
-     sidebarLinks.forEach(link => {
-         link.addEventListener('click', function() {
-              // Aktif sekmenin ID'sini localStorage'a kaydet
-              // localStorage.setItem('activeFinTab', this.id);
-              console.log(`Sidebar tab clicked: ${this.id}`);
+     if (tooltipTriggerList.length > 0) {
+         tooltipTriggerList.map(function (tooltipTriggerEl) {
+           return new bootstrap.Tooltip(tooltipTriggerEl);
          });
-     });
+         console.log("main.js: Bootstrap tooltips initialized.");
+     }
+     */
 
-      // Sayfa yüklendiğinde localStorage'dan aktif sekmeyi yükle (opsiyonel)
-     // const activeTabId = localStorage.getItem('activeFinTab');
-     // if (activeTabId) {
-     //     const activeTab = document.getElementById(activeTabId);
-     //     if (activeTab) {
-     //         const tab = new bootstrap.Tab(activeTab);
-     //         tab.show();
-     //         console.log(`Restored active tab: ${activeTabId}`);
-     //     } else {
-     //          // Eğer kaydedilen ID yoksa veya geçersizse varsayılanı (overview) aktif et
-     //          const defaultTab = document.getElementById('v-pills-overview-tab');
-     //          if (defaultTab) new bootstrap.Tab(defaultTab).show();
-     //     }
-     // }
+     console.log("main.js: Initial setup complete.");
 
-
-});
+}); // End DOMContentLoaded
