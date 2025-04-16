@@ -1,460 +1,523 @@
 // static/js/forecast.js
-console.log("forecast.js yüklendi.");
+console.log("forecast.js loaded.");
 
-// Global değişkenler
-let forecastChartInstance = null; // Plotly grafik nesnesi
-const MAX_RETRIES = 2; // Tekrar deneme sayısı
-const RETRY_DELAY = 3000; // Denemeler arası bekleme (ms)
+// --- Global Variables ---
+let forecastChartInstance = null; // Reference to the Plotly chart object
+const FORECAST_CHART_DIV_ID = 'forecastChart'; // Target div for Plotly
+const FORECAST_STATUS_DIV_ID = 'forecastStatus';
+const FORECAST_META_DIV_ID = 'forecast-meta';
+const MAX_RETRIES = 2;
+const RETRY_DELAY = 2500; // ms
+let currentStockSymbol = null; // Store the currently loaded symbol
+let isLoadingForecast = false; // Prevent multiple simultaneous loads
 
-// --- Plotly Grafik Fonksiyonları ---
+// --- Plotly Chart Functions ---
 
-// Tahmin grafiğini başlatır veya yükleniyor durumunu gösterir
-function initOrShowLoadingForecastChart() {
-    const ctx = document.getElementById('forecastChart');
-    if (!ctx) {
-        console.error("initOrShowLoadingForecastChart: 'forecastChart' elementi bulunamadı.");
+function showForecastLoading(message = "Loading forecast data...") {
+    const chartDiv = document.getElementById(FORECAST_CHART_DIV_ID);
+    const statusDiv = document.getElementById(FORECAST_STATUS_DIV_ID);
+    if (!chartDiv) {
+        console.error("showForecastLoading: Chart div not found:", FORECAST_CHART_DIV_ID);
         return;
     }
 
-    // Eğer zaten bir grafik varsa temizle
+    // Clear previous chart instance if it exists
     if (forecastChartInstance) {
         try {
-            Plotly.purge(ctx);
-            forecastChartInstance = null; // Referansı temizle
+            Plotly.purge(chartDiv);
             console.log("Previous forecast chart purged.");
         } catch (e) {
             console.error("Error purging forecast chart:", e);
         }
+        forecastChartInstance = null;
     }
 
-    // Yükleniyor mesajı ile boş grafik oluştur
-    const layout = {
-        title: 'Fiyat Tahmini Yükleniyor...',
-        xaxis: { visible: false }, // Eksenleri gizle
-        yaxis: { visible: false },
-        plot_bgcolor: '#FFFFFF',
-        paper_bgcolor: '#FFFFFF',
-        margin: { l: 40, r: 20, t: 60, b: 40 },
-        annotations: [{
-            text: "Tahmin verileri alınıyor...",
-            xref: "paper", yref: "paper",
-            x: 0.5, y: 0.5,
-            showarrow: false,
-            font: { size: 14, color: '#6c757d' }
-        }]
-    };
+    // Display loading message using Plotly layout (or fallback)
+     try {
+        Plotly.newPlot(chartDiv, [], {
+             title: 'Loading...', // Simple title
+             xaxis: { visible: false },
+             yaxis: { visible: false },
+             plot_bgcolor: '#FFFFFF', paper_bgcolor: '#FFFFFF',
+             margin: { l: 40, r: 20, t: 60, b: 40 },
+             annotations: [{
+                 text: message, xref: "paper", yref: "paper",
+                 x: 0.5, y: 0.5, showarrow: false,
+                 font: { size: 14, color: '#6c757d' }
+             }]
+        }, { responsive: true });
+        forecastChartInstance = chartDiv; // Assign the div element as the instance reference
+        console.log("Forecast chart placeholder shown.");
+     } catch (e) {
+        console.error("Error creating Plotly loading placeholder:", e);
+         // Fallback to simple text if Plotly fails
+         chartDiv.innerHTML = `<div class="alert alert-light text-center p-5">${message}</div>`;
+     }
 
-    try {
-         Plotly.newPlot(ctx, [], layout, { responsive: true });
-         console.log("Forecast chart initialized with loading state.");
-    } catch (e) {
-         console.error("Error creating initial forecast chart:", e);
+
+    // Update status div as well
+    if (statusDiv) {
+        statusDiv.textContent = message;
+        statusDiv.className = 'text-center text-muted small mt-2'; // Reset class
     }
+    // Reset metrics/summary placeholders
+    updateForecastMetrics(null); // Clears metrics
+    updateForecastSummary(null); // Clears summary
 }
 
-// Plotly tahmin grafiğini gelen veriyle günceller
-function updateForecastChart(data, stockSymbol = 'Hisse') {
-    const ctx = document.getElementById('forecastChart');
-    if (!ctx) {
-         console.error('updateForecastChart: Chart element not found.');
-         return;
+function showForecastError(errorMessage) {
+    const chartDiv = document.getElementById(FORECAST_CHART_DIV_ID);
+    const statusDiv = document.getElementById(FORECAST_STATUS_DIV_ID);
+    console.error("Forecast Error:", errorMessage);
+
+    if (chartDiv) {
+         // Clear previous chart instance
+        if (forecastChartInstance) {
+            try { Plotly.purge(chartDiv); } catch (e) { console.error("Error purging chart on error:", e); }
+            forecastChartInstance = null;
+        }
+         // Display error message using Plotly layout
+         try {
+             Plotly.newPlot(chartDiv, [], {
+                 title: 'Forecast Error',
+                 xaxis: { visible: false }, yaxis: { visible: false },
+                 plot_bgcolor: '#FFFFFF', paper_bgcolor: '#FFFFFF',
+                 margin: { l: 40, r: 20, t: 60, b: 40 },
+                 annotations: [{
+                     text: `Error: ${errorMessage}`, xref: "paper", yref: "paper",
+                     x: 0.5, y: 0.5, showarrow: false,
+                     font: { size: 12, color: '#dc3545' } // Red error color
+                 }]
+             }, { responsive: true });
+             forecastChartInstance = chartDiv;
+             console.log("Forecast chart error state shown.");
+         } catch(e) {
+            console.error("Error displaying Plotly error state:", e);
+             chartDiv.innerHTML = `<div class="alert alert-danger text-center p-3">Error loading forecast: ${errorMessage}</div>`;
+         }
     }
-    // Veri veya gerekli alt anahtarlar eksikse hata göster
+
+    if (statusDiv) {
+        statusDiv.textContent = `Error: ${errorMessage}`;
+        statusDiv.className = 'text-center text-danger small mt-2'; // Error class
+    }
+    // Clear metrics/summary on error
+    updateForecastMetrics(null);
+    updateForecastSummary(null);
+}
+
+
+function updateForecastChart(data, stockSymbol) {
+    const chartDiv = document.getElementById(FORECAST_CHART_DIV_ID);
+    const statusDiv = document.getElementById(FORECAST_STATUS_DIV_ID);
+
+    if (!chartDiv) { console.error('updateForecastChart: Chart div not found.'); return; }
+
+    // Validate data structure
     if (!data || !data.forecast_values || !data.forecast_values.dates || !data.forecast_values.values || !data.forecast_values.lower_bound || !data.forecast_values.upper_bound) {
-        console.error('updateForecastChart: Geçersiz veya eksik tahmin verisi.', data);
-         handleForecastError({ message: "Alınan tahmin verisi formatı geçersiz veya eksik." });
+        showForecastError("Invalid or incomplete forecast data received.");
         return;
     }
 
     const forecastData = data.forecast_values;
-    // Tahminlerde None/null değer var mı kontrol et ve filtrele/logla
-    const validIndices = forecastData.values.map((v, i) => v !== null && forecastData.lower_bound[i] !== null && forecastData.upper_bound[i] !== null).reduce((acc, val, i) => val ? [...acc, i] : acc, []);
+    // Filter out any points where essential values are null
+    const validIndices = forecastData.values.reduce((acc, v, i) => {
+        if (v !== null && forecastData.dates[i] !== null && forecastData.lower_bound[i] !== null && forecastData.upper_bound[i] !== null) {
+            acc.push(i);
+        }
+        return acc;
+    }, []);
 
     if (validIndices.length === 0) {
-        console.error('updateForecastChart: Tahmin verilerinde hiç geçerli nokta bulunamadı.');
-        handleForecastError({ message: "Tahmin verisi tamamen geçersiz." });
+        showForecastError("No valid data points found in the forecast.");
         return;
     }
-     if (validIndices.length < forecastData.dates.length) {
-          console.warn(`updateForecastChart: Tahmin verilerinde ${forecastData.dates.length - validIndices.length} adet geçersiz (null) nokta bulundu ve atlandı.`);
-     }
 
-     // Sadece geçerli verileri al
-     const validDates = validIndices.map(i => forecastData.dates[i]);
-     const validValues = validIndices.map(i => forecastData.values[i]);
-     const validLower = validIndices.map(i => forecastData.lower_bound[i]);
-     const validUpper = validIndices.map(i => forecastData.upper_bound[i]);
+    // Create arrays with only valid data
+    const validDates = validIndices.map(i => forecastData.dates[i]);
+    const validValues = validIndices.map(i => forecastData.values[i]);
+    const validLower = validIndices.map(i => forecastData.lower_bound[i]);
+    const validUpper = validIndices.map(i => forecastData.upper_bound[i]);
 
-
-    // Veri izlerini (traces) oluştur
+    // --- Plotly Traces ---
     const traceForecast = {
-        x: validDates,
-        y: validValues,
-        name: 'Tahmin',
-        mode: 'lines',
-        type: 'scatter',
-        line: { color: '#3498db', width: 2.5 } // Ana tahmin çizgisi (biraz kalın)
+        x: validDates, y: validValues, name: 'Forecast',
+        mode: 'lines', type: 'scatter',
+        line: { color: '#3498db', width: 2.5 } // Blue forecast line
     };
-
     const traceUpperBound = {
-        x: validDates,
-        y: validUpper,
-        name: 'Güven Aralığı', // Tek legend girdisi
-        mode: 'lines',
-        type: 'scatter',
-        line: { color: 'rgba(52, 152, 219, 0.3)', width: 1, dash: 'dot' }, // Şeffaf çizgi
-        fill: 'none', // Dolgu yok
-        showlegend: false // Üst sınır için legend gösterme
+        x: validDates, y: validUpper, name: 'Upper Bound',
+        mode: 'lines', type: 'scatter',
+        line: { color: 'rgba(52, 152, 219, 0.3)', width: 1, dash: 'dot' }, // Light blue dotted line
+        fill: 'none', // No fill for upper bound itself
+        showlegend: false // Don't show separate legend item for upper bound
     };
-
     const traceLowerBound = {
-        x: validDates,
-        y: validLower,
-        name: 'Alt Sınır', // Bu legend'da görünmeyecek
-        mode: 'lines',
-        type: 'scatter',
-        line: { color: 'rgba(52, 152, 219, 0.3)', width: 1, dash: 'dot' }, // Şeffaf çizgi
-        fill: 'tonexty', // Üst sınıra kadar doldur (traceUpperBound'a kadar)
-        fillcolor: 'rgba(52, 152, 219, 0.1)', // Çok şeffaf mavi dolgu
-        showlegend: true, // Sadece alt sınır için legend göster (Güven Aralığı olarak görünecek)
-        legendgroup: 'confidence', // Üst ile grupla (gerekirse)
-        name: 'Güven Aralığı' // Legend metnini ayarla
+        x: validDates, y: validLower, name: 'Confidence Interval', // Legend entry for the shaded area
+        mode: 'lines', type: 'scatter',
+        line: { color: 'rgba(52, 152, 219, 0.3)', width: 1, dash: 'dot' }, // Light blue dotted line
+        fill: 'tonexty', // Fill the area to the *next* trace (traceUpperBound)
+        fillcolor: 'rgba(52, 152, 219, 0.1)', // Light blue shaded area
+        showlegend: true, // Show legend for the interval
+        legendgroup: 'confidence' // Group bounds in legend if needed
     };
 
-    // Grafik düzenini (layout) ayarla
+    // --- Plotly Layout ---
     const layout = {
-        title: `${stockSymbol} Fiyat Tahmini (${validDates.length} Günlük)`,
+        title: {
+            text: `${stockSymbol} Price Forecast (${validDates.length} Days)`,
+            font: { size: 16 }
+        },
         xaxis: {
-            title: 'Tarih',
-            showgrid: true, gridcolor: '#ecf0f1', type: 'date', tickformat: '%d %b %Y', // Tarih formatı
-            range: [validDates[0], validDates[validDates.length - 1]] // Tarih aralığını ayarla
+            title: 'Date', showgrid: true, gridcolor: '#ecf0f1',
+            type: 'date', tickformat: '%d %b %Y', // Format dates on axis
+             // Set range slightly padded? Or let Plotly auto-range.
+             // range: [validDates[0], validDates[validDates.length - 1]]
         },
         yaxis: {
-            title: 'Fiyat ($)', // Para birimi eklendi
-            showgrid: true, gridcolor: '#ecf0f1',
-            // Fiyat aralığını verilere göre otomatik ayarla (Plotly varsayılanı)
-            // range: [Math.min(...validLower) * 0.98, Math.max(...validUpper) * 1.02] // Manuel aralık (opsiyonel)
+            title: 'Predicted Price', showgrid: true, gridcolor: '#ecf0f1',
+            // Add currency formatting if available
+            tickformat: (window.stockData?.currency === 'USD' ? '$,.2f' : ',.2f'), // Basic currency format
+             autorange: true // Ensure axis adjusts to data range
         },
-        plot_bgcolor: '#FFFFFF',
-        paper_bgcolor: '#FFFFFF',
+        plot_bgcolor: '#FFFFFF', paper_bgcolor: '#FFFFFF',
         showlegend: true,
         legend: {
-            x: 0.01, y: 0.99, // Sol üst köşe
+            x: 0.01, y: 0.99, // Position legend top-left
             bgcolor: 'rgba(255,255,255,0.7)', bordercolor: '#CCCCCC', borderwidth: 1,
-            orientation: 'h' // Yatay legend
+            orientation: 'h' // Horizontal legend
         },
-        margin: { l: 60, r: 30, t: 80, b: 50 }
+        margin: { l: 60, r: 30, t: 50, b: 50 } // Adjust margins
     };
 
-    // Mevcut grafiği yeni veri ve layout ile güncelle (purge yerine react kullanmak daha iyi)
+    // --- Render Chart ---
     try {
-        Plotly.react(ctx, [traceLowerBound, traceUpperBound, traceForecast], layout, { responsive: true });
-        forecastChartInstance = ctx; // Referansı güncelle
+        // Use Plotly.react for efficient updates if chart exists, or Plotly.newPlot if not
+        Plotly.react(chartDiv, [traceLowerBound, traceUpperBound, traceForecast], layout, { responsive: true });
+        forecastChartInstance = chartDiv; // Update instance reference
         console.log("Forecast chart updated with new data.");
+        if (statusDiv) {
+            // Show last updated time if available
+            const timestamp = data.timestamp ? luxon.DateTime.fromISO(data.timestamp).toFormat('dd MMM yyyy HH:mm:ss ZZZZ') : 'N/A';
+            statusDiv.textContent = `Forecast generated. Last updated: ${timestamp}`;
+             statusDiv.className = 'text-center text-muted small mt-2'; // Reset class
+        }
     } catch (e) {
-         console.error("Error updating forecast chart with Plotly.react:", e);
-         handleForecastError({ message: "Tahmin grafiği güncellenirken hata oluştu." });
+        console.error("Error updating forecast chart with Plotly:", e);
+        showForecastError("Failed to render the forecast chart.");
     }
 }
 
-// --- Metrik Güncelleme Fonksiyonları ---
+// --- Metrics & Summary Update Functions ---
 
-// Tahmin metriklerini HTML'deki ilgili alanlara yazar
 function updateForecastMetrics(data) {
-    const metricsContainer = document.querySelector('.metrics-container');
-    if (!metricsContainer) return; // Metrik alanı yoksa çık
+    const metricsContainer = document.querySelector('.metrics-container'); // Target added in HTML
+    if (!metricsContainer) {
+        console.warn("updateForecastMetrics: Metrics container not found.");
+        return; // Exit if container doesn't exist
+    }
 
-    // Metrik alanlarını bul
+    // Find metric elements
     const trendDirEl = metricsContainer.querySelector('#trendDirection');
     const trendStrEl = metricsContainer.querySelector('#trendStrength');
     const volEl = metricsContainer.querySelector('#historicalVolatility');
     const seasonEl = metricsContainer.querySelector('#seasonalityStrength');
     const confIntEl = metricsContainer.querySelector('#confidenceInterval');
 
-    // Veri veya metrik yoksa alanları temizle/sıfırla
+    // Helper to update element text or show 'N/A'
+    const updateMetric = (el, value, formatFn = null) => {
+        if (!el) return; // Skip if element not found
+        if (value !== null && value !== undefined && !isNaN(value)) {
+            el.textContent = formatFn ? formatFn(value) : value;
+            // Optional: Add dynamic styling based on value
+             if (el.id === 'historicalVolatility') { // Example for Volatility
+                el.className = 'metric-value fw-medium'; // Reset class
+                 if (value * 100 < 25) el.classList.add('text-success'); // Low vol = green
+                 else if (value * 100 < 50) el.classList.add('text-warning'); // Medium vol = orange
+                 else el.classList.add('text-danger'); // High vol = red
+             }
+        } else {
+            el.textContent = 'N/A';
+             el.className = 'metric-value fw-medium text-muted'; // Style N/A differently
+        }
+    };
+
+    // If data or metrics are missing, clear all fields
     if (!data || !data.metrics) {
-        console.warn("updateForecastMetrics: Gerekli metrik verisi bulunamadı.");
-        [trendDirEl, trendStrEl, volEl, seasonEl, confIntEl].forEach(el => {
-            if (el) el.textContent = 'N/A';
-        });
-        updateForecastSummary(null); // Özeti de temizle
+        console.warn("updateForecastMetrics: Missing data or metrics object.");
+        updateMetric(trendDirEl, 'N/A'); // Explicitly set N/A
+        updateMetric(trendStrEl, null);
+        updateMetric(volEl, null);
+        updateMetric(seasonEl, null);
+        updateMetric(confIntEl, null);
         return;
     }
 
     const metrics = data.metrics;
-
     try {
-        // Trend Yönü
-        if (trendDirEl) trendDirEl.textContent = metrics.trend_direction || 'Belirsiz';
+        updateMetric(trendDirEl, metrics.trend_direction || 'Unknown'); // Handle empty string
+        updateMetric(trendStrEl, metrics.trend_strength, v => `${(v * 100).toFixed(1)}%`);
+        updateMetric(volEl, metrics.historical_volatility, v => `${(v * 100).toFixed(1)}%`);
+        updateMetric(seasonEl, metrics.seasonality_strength, v => `${(v * 100).toFixed(1)}%`);
+        // Confidence interval: display relative width (e.g., +/- 5%)
+        updateMetric(confIntEl, metrics.confidence_interval, v => `±${(v / 2 * 100).toFixed(1)}%`);
 
-        // Trend Gücü (Yüzde olarak)
-        if (trendStrEl) trendStrEl.textContent = metrics.trend_strength !== null ? `${(metrics.trend_strength * 100).toFixed(1)}%` : 'N/A';
-
-        // Tarihsel Volatilite (Yıllık Yüzde)
-        if (volEl) {
-            const volatility = metrics.historical_volatility;
-            if (volatility !== null) {
-                volEl.textContent = `${(volatility * 100).toFixed(1)}%`;
-                 // Renklendirme (opsiyonel)
-                 volEl.classList.remove('text-success', 'text-warning', 'text-danger');
-                 if (volatility * 100 < 25) volEl.classList.add('text-success'); // Düşük volatilite
-                 else if (volatility * 100 < 50) volEl.classList.add('text-warning'); // Orta
-                 else volEl.classList.add('text-danger'); // Yüksek
-            } else {
-                volEl.textContent = 'N/A';
-                volEl.classList.remove('text-success', 'text-warning', 'text-danger');
-            }
-        }
-
-        // Mevsimsellik Etkisi (Yüzde olarak)
-        if (seasonEl) seasonEl.textContent = metrics.seasonality_strength !== null ? `${(metrics.seasonality_strength * 100).toFixed(1)}%` : 'N/A';
-
-        // Güven Aralığı (Son Tahmin, Fiyata Göre Yüzde Genişlik)
-        if (confIntEl) {
-             const intervalRelative = metrics.confidence_interval; // Artık göreceli genişlik
-             if (intervalRelative !== null && intervalRelative >= 0) {
-                  // Göreceli genişliği yüzde olarak gösterelim
-                 confIntEl.textContent = `±${(intervalRelative / 2 * 100).toFixed(1)}%`; // Genişliğin yarısı +/- %
-             } else {
-                  confIntEl.textContent = 'N/A';
-             }
-         }
-
-        // Özeti güncelle
-        updateForecastSummary(data);
-
+        console.log("Forecast metrics updated.");
     } catch (e) {
-        console.error("Metrik güncelleme hatası:", e);
-        // Hata durumunda alanları temizle
-        [trendDirEl, trendStrEl, volEl, seasonEl, confIntEl].forEach(el => { if (el) el.textContent = 'Hata'; });
-         updateForecastSummary(null); // Özeti de temizle
+        console.error("Error updating forecast metrics:", e);
+        // Clear fields on error during update
+        updateMetric(trendDirEl, 'Error'); updateMetric(trendStrEl, null); updateMetric(volEl, null); updateMetric(seasonEl, null); updateMetric(confIntEl, null);
     }
 }
 
-// Tahmin özetini oluşturur ve HTML'e yazar
 function updateForecastSummary(data) {
     const summaryElement = document.getElementById('forecastSummary');
     if (!summaryElement) return;
 
-    // Gerekli verilerin kontrolü
+    // Clear summary if data is invalid
     if (!data || !data.forecast_values || !data.forecast_values.values || !data.metrics) {
-         summaryElement.textContent = "Özet oluşturmak için yeterli tahmin verisi bulunamadı.";
-         summaryElement.classList.add('text-danger');
-         return;
+        summaryElement.textContent = "Summary cannot be generated due to missing forecast data.";
+        summaryElement.className = 'text-muted small'; // Reset class
+        return;
     }
 
     try {
-        const values = data.forecast_values.values.filter(v => v !== null); // Null olmayanları al
+        const values = data.forecast_values.values.filter(v => v !== null && !isNaN(v));
         const metrics = data.metrics;
-        const lastActualPrice = data.last_actual_price; // Son gerçek fiyat
+        const lastActualPrice = data.last_actual_price;
 
         if (values.length === 0) {
-             summaryElement.textContent = "Geçerli tahmin değeri bulunamadı.";
-             return;
+            summaryElement.textContent = "No valid forecast values available to generate summary.";
+            return;
         }
 
-        // İlk ve son tahmin değerleri
         const firstForecastValue = values[0];
         const lastForecastValue = values[values.length - 1];
 
-        // Yüzdelik değişim (son gerçek fiyata göre veya ilk tahmine göre)
-        let changeBase = lastActualPrice !== null ? lastActualPrice : firstForecastValue;
-        let percentChangeText = "belirsiz bir değişim";
-        if (changeBase !== null && changeBase !== 0 && lastForecastValue !== null) {
-            const percentChange = ((lastForecastValue - changeBase) / Math.abs(changeBase) * 100);
-             const changeDirection = percentChange >= 0 ? 'artış' : 'düşüş';
-             percentChangeText = `%${Math.abs(percentChange).toFixed(1)} ${changeDirection}`;
+        // Determine base for percentage change calculation
+        let changeBase = (lastActualPrice !== null && !isNaN(lastActualPrice)) ? lastActualPrice : firstForecastValue;
+        let percentChangeText = "an undetermined change";
+        let overallDirection = metrics.trend_direction ? metrics.trend_direction.toLowerCase() : 'uncertain';
+
+        if (changeBase !== null && changeBase !== 0 && !isNaN(changeBase) && lastForecastValue !== null && !isNaN(lastForecastValue)) {
+            const pC = ((lastForecastValue - changeBase) / Math.abs(changeBase) * 100);
+            const changeDirection = pC >= 0 ? 'increase' : 'decrease';
+            percentChangeText = `a ${Math.abs(pC).toFixed(1)}% ${changeDirection}`;
+            if (overallDirection === 'uncertain') { // Refine direction based on calculation if trend is weak/uncertain
+                 overallDirection = pC > 1 ? 'upward' : (pC < -1 ? 'downward' : 'sideways');
+            }
         }
 
-        // Güven seviyesi (Volatiliteye göre)
-        let confidenceLevel = 'orta';
-        let volatilityText = metrics.historical_volatility !== null ? `%${(metrics.historical_volatility * 100).toFixed(1)}` : "bilinmiyor";
-         if (metrics.historical_volatility !== null) {
-            if (metrics.historical_volatility < 0.25) confidenceLevel = 'yüksek'; // Eşikler ayarlanabilir
-             else if (metrics.historical_volatility > 0.50) confidenceLevel = 'düşük';
-         } else {
-             confidenceLevel = 'belirsiz';
-         }
+        // Assess confidence based on volatility and interval width
+        let confidenceLevel = 'medium';
+        const vol = metrics.historical_volatility;
+        const interval = metrics.confidence_interval;
+        if (vol !== null && interval !== null) {
+            if (vol < 0.20 && interval < 0.15) confidenceLevel = 'high'; // Low vol, narrow interval
+            else if (vol > 0.50 || interval > 0.30) confidenceLevel = 'low'; // High vol or wide interval
+        } else if (vol === null || interval === null) {
+             confidenceLevel = 'uncertain'; // Cannot assess if metrics missing
+        }
 
-        // Özet metnini oluştur
-         let summary = `Model, genel olarak <strong>${metrics.trend_direction || 'belirsiz'}</strong> bir trend öngörüyor. `;
-         summary += `Tahmin dönemi sonunda fiyatın yaklaşık <strong>${percentChangeText}</strong> göstermesi bekleniyor. `;
-         summary += `Tarihsel volatilite (${volatilityText}) göz önüne alındığında, tahmin güvenilirliği <strong>${confidenceLevel}</strong> seviyesindedir. `;
-         if (metrics.seasonality_strength !== null && metrics.seasonality_strength > 0.1) { // Sadece belirginse göster
-             summary += `Mevsimsel etkilerin belirgin olduğu (%${(metrics.seasonality_strength * 100).toFixed(0)}) gözlemlenmiştir.`;
-         }
+        let summary = `The model predicts a general <strong>${overallDirection}</strong> trend over the forecast period. `;
+        summary += `The price is expected to show approximately <strong>${percentChangeText}</strong> compared to the last known price. `;
+        summary += `Based on historical volatility and forecast uncertainty, the confidence level for this prediction is assessed as <strong>${confidenceLevel}</strong>.`;
+        if (metrics.seasonality_strength !== null && metrics.seasonality_strength > 0.1) {
+            summary += ` Note: Seasonality appears to have a noticeable impact on price movements.`;
+        }
 
-        summaryElement.innerHTML = summary; // HTML olarak ekle (strong için)
-        summaryElement.classList.remove('text-danger'); // Hata varsa kaldır
+        summaryElement.innerHTML = summary; // Use innerHTML to render strong tags
+        summaryElement.className = 'text-dark small'; // Make text darker
 
     } catch (e) {
-        console.error("Tahmin özeti oluşturma hatası:", e);
-        summaryElement.textContent = "Tahmin özeti oluşturulurken bir hata oluştu.";
-         summaryElement.classList.add('text-danger');
+        console.error("Error generating forecast summary:", e);
+        summaryElement.textContent = "An error occurred while generating the forecast summary.";
+        summaryElement.className = 'text-danger small'; // Show error state
     }
 }
 
 
-// --- Veri Yükleme ve Hata Yönetimi ---
+// --- Data Loading & Fetching ---
 
-// Ana veri yükleme fonksiyonu
 async function loadForecastData(stockSymbol) {
-    if (!stockSymbol) {
-        console.error('loadForecastData: Hisse senedi sembolü gerekli');
+    if (isLoadingForecast) {
+        console.warn("Forecast loading already in progress. Skipping.");
         return;
     }
-    console.log(`Loading forecast data for: ${stockSymbol}`);
+    if (!stockSymbol) {
+        console.error('loadForecastData: Stock symbol is required.');
+        showForecastError("No stock symbol provided.");
+        return;
+    }
 
-    // Yükleniyor durumunu göster
-    initOrShowLoadingForecastChart();
-    updateForecastMetrics(null); // Metrikleri temizle
+    isLoadingForecast = true;
+    currentStockSymbol = stockSymbol; // Store the symbol being loaded
+    console.log(`Requesting forecast data for: ${stockSymbol}`);
+    showForecastLoading(`Loading forecast for ${stockSymbol}...`); // Show loading state
 
     try {
-        // Fetch işlemini retry ile yap
+        // Use fetchWithRetry for resilience
         const response = await fetchWithRetry(`/get_forecast_data?symbol=${stockSymbol}`, {}, MAX_RETRIES);
 
-        // Yanıtı işle
         if (!response.ok) {
-             // Fetch başarılı ama HTTP hatası var (4xx, 5xx)
-             const errorData = await response.json().catch(() => ({ error: `Sunucu hatası: ${response.status}` })); // JSON parse edilemezse
-             throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
-         }
+            // Try to get error message from response body
+            const errorData = await response.json().catch(() => ({ error: `Server error: ${response.status}` }));
+            throw new Error(errorData.error || `HTTP error ${response.status}`);
+        }
 
         const data = await response.json();
 
-        // API kendi içinde hata döndürdüyse (örn. forecasting.py içinden)
+        // Check for application-level errors in the response
         if (data.error) {
             throw new Error(data.error);
         }
 
-        // Veri başarıyla alındı, grafikleri ve metrikleri güncelle
         console.log("Forecast data received:", data);
-        updateForecastChart(data, stockSymbol);
-        updateForecastMetrics(data);
-        // Özet zaten updateForecastMetrics içinden çağrılıyor
+        // Only update if the received data is still for the current symbol
+        if (stockSymbol === currentStockSymbol) {
+             updateForecastChart(data, stockSymbol);
+             updateForecastMetrics(data);
+             updateForecastSummary(data);
+        } else {
+             console.log(`Forecast data received for ${stockSymbol}, but user navigated to ${currentStockSymbol}. Discarding.`);
+        }
 
     } catch (error) {
-        console.error('Tahmin verisi çekme/işleme hatası:', error);
-        handleForecastError(error); // Hata durumunu kullanıcıya göster
+        console.error(`Failed to load/process forecast data for ${stockSymbol}:`, error);
+         // Only show error if it's for the currently selected symbol
+         if (stockSymbol === currentStockSymbol) {
+             showForecastError(error.message || "An unknown error occurred.");
+         }
+    } finally {
+        isLoadingForecast = false; // Release lock
+        // Ensure refresh button is enabled
+        const refreshBtn = document.getElementById('refreshForecastBtn');
+        if (refreshBtn) refreshBtn.disabled = false;
     }
 }
 
-// Fetch işlemini tekrar deneme mekanizması ile yapar
-async function fetchWithRetry(url, options = {}, retries = 1) {
-     console.log(`Attempting fetch (try ${retries}): ${url}`);
+// Fetch with retry logic (modified slightly)
+async function fetchWithRetry(url, options = {}, retries = 0) { // Start retries from 0
+     console.log(`Fetching (Attempt ${retries + 1}/${MAX_RETRIES + 1}): ${url}`);
      try {
          const response = await fetch(url, options);
-          // 429 (Rate Limit) hatasını özel olarak ele alıp tekrar deneyebiliriz
-          if (response.status === 429 && retries < MAX_RETRIES) {
-              const retryAfter = RETRY_DELAY * retries; // Artan bekleme
-              console.warn(`Rate limit hit (429). Retrying after ${retryAfter}ms...`);
-              await new Promise(resolve => setTimeout(resolve, retryAfter));
-              return fetchWithRetry(url, options, retries + 1); // Tekrar dene
-          }
-         return response; // Diğer durumları doğrudan döndür (başarılı veya diğer hatalar)
-     } catch (error) {
-         // Ağ hatası gibi durumlarda tekrar deneme (opsiyonel)
-         if (retries < MAX_RETRIES) {
-             const retryAfter = RETRY_DELAY * retries;
-             console.warn(`Fetch failed (${error.message}). Retrying after ${retryAfter}ms...`);
-             await new Promise(resolve => setTimeout(resolve, retryAfter));
-             return fetchWithRetry(url, options, retries + 1);
+         // Retry on 429 (Rate Limit) or 503/504 (Server Overload/Gateway Timeout)
+         if ((response.status === 429 || response.status === 503 || response.status === 504) && retries < MAX_RETRIES) {
+             const delay = RETRY_DELAY * (retries + 1); // Incremental backoff
+             console.warn(`Received status ${response.status}. Retrying after ${delay}ms...`);
+             await new Promise(resolve => setTimeout(resolve, delay));
+             return fetchWithRetry(url, options, retries + 1); // Increment retry count
          }
-         console.error(`Fetch failed after ${MAX_RETRIES} attempts: ${error.message}`);
-         throw error; // Son denemeden sonra hatayı fırlat
+         return response; // Return response if OK or non-retriable error
+     } catch (error) {
+         // Retry on network errors
+         if (retries < MAX_RETRIES) {
+              const delay = RETRY_DELAY * (retries + 1);
+              console.warn(`Fetch failed (${error.message}). Retrying after ${delay}ms...`);
+              await new Promise(resolve => setTimeout(resolve, delay));
+              return fetchWithRetry(url, options, retries + 1);
+         }
+         console.error(`Fetch failed after ${MAX_RETRIES + 1} attempts: ${error.message}`);
+         throw error; // Throw error after max retries
      }
  }
 
 
-// Tahmin yükleme sırasında oluşan hataları kullanıcıya gösterir
-function handleForecastError(error) {
-    const ctx = document.getElementById('forecastChart');
-    if (ctx) {
-        try {
-             Plotly.purge(ctx); // Eski grafiği temizle (varsa)
-             const layout = {
-                 title: 'Tahmin Yüklenemedi',
-                 xaxis: { visible: false }, yaxis: { visible: false },
-                 plot_bgcolor: '#FFFFFF', paper_bgcolor: '#FFFFFF',
-                 margin: { l: 40, r: 20, t: 60, b: 40 },
-                 annotations: [{
-                     text: `Hata: ${error.message || 'Bilinmeyen bir sorun oluştu.'}`,
-                     xref: "paper", yref: "paper", x: 0.5, y: 0.5,
-                     showarrow: false, font: { size: 12, color: '#dc3545' } // Kırmızı renk
-                 }]
-             };
-             Plotly.newPlot(ctx, [], layout, { responsive: true });
-             console.log("Forecast chart updated with error state.");
-         } catch(e) { console.error("Error displaying forecast error state:", e); }
-    }
-
-    // Metrik alanlarını hata durumuna ayarla
-    updateForecastMetrics(null); // Bu fonksiyon zaten N/A veya Hata yazar
-    // Özeti hata mesajı ile güncelle
-    const summaryElement = document.getElementById('forecastSummary');
-    if (summaryElement) {
-        summaryElement.textContent = `Tahmin verisi alınamadı: ${error.message || 'Bilinmeyen hata.'}`;
-        summaryElement.classList.add('text-danger');
-    }
-}
-
-// --- Olay Dinleyicileri ---
+// --- Event Listeners ---
 document.addEventListener('DOMContentLoaded', function() {
     console.log("forecast.js: DOMContentLoaded event fired.");
 
-    // Tahmin sekmesi için grafik alanını hazırla
-    const forecastChartElement = document.getElementById('forecastChart');
-    if (forecastChartElement) {
-        initOrShowLoadingForecastChart(); // Başlangıçta yükleniyor göster
-    } else {
-        console.warn("Forecast chart element (#forecastChart) not found on page load.");
+    const forecastMetaDiv = document.getElementById(FORECAST_META_DIV_ID);
+    const initialStockSymbol = forecastMetaDiv ? forecastMetaDiv.dataset.stockSymbol : null;
+    const forecastChartDiv = document.getElementById(FORECAST_CHART_DIV_ID);
+    const refreshBtn = document.getElementById('refreshForecastBtn');
+
+    if (!forecastChartDiv) {
+        console.warn("forecast.js: Forecast chart div element not found. Cannot initialize.");
+        return; // Stop if essential elements are missing
     }
 
-    // Sayfada başlangıçta bir hisse senedi varsa, tahmin verilerini yükle
-    // Input'un ID'si 'stock' varsayılıyor (partials/_sidebar.html'deki gibi)
-    const stockInput = document.getElementById('stock');
-    const initialStockSymbol = stockInput ? stockInput.value : null;
-
+    // Initial load logic
     if (initialStockSymbol) {
-        console.log(`Initial stock symbol found ('${initialStockSymbol}'), triggering forecast load.`);
-        loadForecastData(initialStockSymbol);
+        console.log(`forecast.js: Initial stock symbol found ('${initialStockSymbol}'), triggering forecast load.`);
+        loadForecastData(initialStockSymbol); // Load data for the initial symbol
     } else {
-         console.log("No initial stock symbol found. Forecast will load when a stock is selected.");
-          // Eğer hisse seçili değilse, grafikte "Hisse seçin" mesajı gösterebiliriz
-          if (forecastChartElement) {
-                try {
-                     Plotly.purge(forecastChartElement);
-                     Plotly.newPlot(forecastChartElement, [], {
-                          title: 'Fiyat Tahmini',
-                          xaxis: { visible: false }, yaxis: { visible: false },
-                          annotations: [{ text: "Lütfen bir hisse senedi seçin.", xref: "paper", yref: "paper", x: 0.5, y: 0.5, showarrow: false, font: { size: 14, color: '#6c757d' } }]
-                     });
-                } catch(e) { console.error("Error showing initial 'select stock' message:", e); }
-          }
-          updateForecastMetrics(null); // Metrikleri temizle
-          const summaryEl = document.getElementById('forecastSummary');
-          if(summaryEl) summaryEl.textContent = "Tahminleri görmek için bir hisse senedi arayın.";
-
+        console.log("forecast.js: No initial stock symbol found. Showing 'select stock' message.");
+        showForecastLoading("Select a stock to view forecast."); // Show initial placeholder
     }
 
-    // Tahmin sekmesine tıklandığında grafiği yeniden boyutlandır (yeniden çizmek daha iyi olabilir)
-    // Sidebar'daki link ID'si 'v-pills-forecast-tab' varsayılıyor
-    const forecastTabLink = document.getElementById('v-pills-forecast-tab');
-    if (forecastTabLink) {
-        forecastTabLink.addEventListener('shown.bs.tab', function () {
-            const forecastChartElement = document.getElementById('forecastChart');
-            if (forecastChartElement && typeof Plotly !== 'undefined') {
-                 // Plotly.Plots.resize() bazen yetersiz kalabilir, yeniden çizelim
-                 // Ancak bu, veri tekrar çekilmeden sadece mevcut boyutlara göre ayarlar.
-                 // Eğer boyutlandırma sorunu devam ederse, layout'u güncelleyip Plotly.react çağırmak gerekebilir.
-                try {
-                    console.log("Forecast tab shown, resizing Plotly chart...");
-                    setTimeout(() => Plotly.Plots.resize(forecastChartElement), 50); // Kısa gecikme
-                } catch(e) {
-                     console.error("Plotly resize error on tab show:", e);
-                }
+    // Refresh button listener
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', function() {
+             const currentSymbol = document.getElementById(FORECAST_META_DIV_ID)?.dataset.stockSymbol;
+            if (currentSymbol) {
+                 console.log(`Forecast refresh triggered for ${currentSymbol}`);
+                 this.disabled = true; // Disable button immediately
+                 // Clear forecast cache before fetching new data
+                 fetch(`/clear_cache?key=forecast_${currentSymbol}`)
+                    .then(res => {
+                         if(!res.ok) console.warn("Could not clear forecast cache before refresh.");
+                         return loadForecastData(currentSymbol); // Load after attempting cache clear
+                    })
+                    .catch(err => {
+                         console.error("Error clearing cache:", err);
+                         loadForecastData(currentSymbol); // Still try to load data
+                    });
+
+            } else {
+                 console.warn("Refresh forecast clicked but no symbol found.");
             }
         });
+         console.log("Refresh forecast button listener attached.");
+    } else {
+         console.warn("Refresh forecast button not found.");
     }
 
-}); // DOMContentLoaded Sonu
+
+    // Listener for when the forecast tab becomes visible (e.g., using Bootstrap tabs)
+    // This ensures Plotly chart resizes correctly if the tab was hidden initially.
+    const forecastTabLink = document.getElementById('forecasting-tab'); // ID of the tab *link*
+    if (forecastTabLink) {
+        forecastTabLink.addEventListener('shown.bs.tab', function () {
+            const chartDiv = document.getElementById(FORECAST_CHART_DIV_ID);
+            // Check if Plotly is loaded and a chart exists in the div
+            if (chartDiv && typeof Plotly !== 'undefined' && chartDiv.data) {
+                try {
+                    console.log("Forecast tab shown, resizing Plotly chart...");
+                    // Delay resize slightly to ensure container dimensions are stable
+                    setTimeout(() => Plotly.Plots.resize(chartDiv), 100);
+                } catch (e) {
+                    console.error("Plotly resize error on tab show:", e);
+                }
+            } else {
+                 console.warn("Forecast tab shown, but Plotly chart or library not ready for resize.");
+            }
+        });
+         console.log("Listener attached for 'shown.bs.tab' on forecast tab.");
+    } else {
+        console.warn("Forecast tab link ('#forecasting-tab') not found.");
+    }
+
+}); // End DOMContentLoaded
+
+// --- Add route to clear cache (needed for refresh button) ---
+// Note: This should ideally be in your Flask app (app.py)
+// Example function to add to app.py:
+/*
+@app.route('/clear_cache')
+def clear_cache_key():
+    key = request.args.get('key')
+    if key:
+        try:
+            # Make cache key prefix aware if needed (depends on Flask-Caching setup)
+            # full_key = cache.config.get('CACHE_KEY_PREFIX', '') + key
+            # cache.delete(full_key)
+            cache.delete(key) # Try deleting directly first
+            app.logger.info(f"Cache key '{key}' deleted via API request.")
+            return jsonify({"status": "success", "message": f"Cache key '{key}' cleared."}), 200
+        except Exception as e:
+            app.logger.error(f"Error deleting cache key '{key}': {e}", exc_info=True)
+            return jsonify({"status": "error", "message": "Error clearing cache key."}), 500
+    else:
+        return jsonify({"status": "error", "message": "No cache key provided."}), 400
+*/

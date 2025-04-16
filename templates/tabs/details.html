@@ -1,60 +1,8 @@
 {# templates/tabs/details.html #}
-{% if stock_data and not error %}
-    <div class="row g-4"> {# Grafik arası boşluk için g-4 #}
-        <div class="col-md-6">
-            <div class="card shadow-sm border-0 h-100">
-                <div class="card-body">
-                    <h5 class="card-title fs-6 mb-3">Açılış & Kapanış</h5>
-                    <div class="chart-container details-chart-container">
-                        <canvas id="openCloseChart"></canvas>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-6">
-            <div class="card shadow-sm border-0 h-100">
-                <div class="card-body">
-                    <h5 class="card-title fs-6 mb-3">İşlem Hacmi Detayı</h5>
-                    <div class="chart-container details-chart-container">
-                        <canvas id="detailVolumeChart"></canvas>
-                    </div>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-12"> {# Tam genişlik #}
-            <div class="card shadow-sm border-0 h-100">
-                <div class="card-body">
-                    <h5 class="card-title fs-6 mb-3">Yüksek / Düşük Fiyat Aralığı</h5>
-                    <div class="chart-container details-chart-container">
-                        <canvas id="highLowChart"></canvas>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div> {# Kapanan .row #}
+{# BU DOSYA ARTIK KULLANILMIYOR - İçerik overview.html'e taşındı #}
+{# İsterseniz bu dosyayı silebilir veya boş bırakabilirsiniz. #}
+{# Ya da sadece bir yönlendirme mesajı ekleyebilirsiniz: #}
 
-     {# Detaylı grafikler için script'ler index.html'de yüklenecek #}
-     <script>
-         // Detaylar sekmesi aktif olduğunda ilgili grafikleri oluştur/güncelle
-         document.addEventListener('DOMContentLoaded', function() {
-             const detailsTab = document.getElementById('v-pills-details-tab');
-             if (detailsTab) {
-                 detailsTab.addEventListener('shown.bs.tab', function () {
-                     console.log("Details tab shown - initializing detail charts...");
-                     if (typeof createOpenCloseChart === 'function') createOpenCloseChart(); else console.warn('createOpenCloseChart not found');
-                     if (typeof createDetailVolumeChart === 'function') createDetailVolumeChart(); else console.warn('createDetailVolumeChart not found');
-                     if (typeof createHighLowChart === 'function') createHighLowChart(); else console.warn('createHighLowChart not found');
-                 });
-             }
-         });
-     </script>
-
-{% else %}
-    <div class="alert alert-light text-center mt-4">
-        <i class="fas fa-magnifying-glass-chart fa-2x text-muted mb-3"></i><br>
-        Detaylı analiz grafikleri için veri yüklenemedi.
-        {% if error_message %}
-            <br><small class="text-danger">Hata: {{ error_message }}</small>
-        {% endif %}
-    </div>
-{% endif %} {# if stock_data and not error sonu #}
+<div class="alert alert-info text-center mt-4" role="alert">
+    <i class="fas fa-info-circle me-2"></i> Detailed charts are now shown in the Overview tab.
+</div>

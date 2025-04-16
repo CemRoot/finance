@@ -3,31 +3,73 @@
     <div class="col-12">
         <div class="card shadow-sm border-0">
             <div class="card-header bg-light border-0">
-                <h5 class="card-title mb-0 fs-6">{{ stock if stock else 'Hisse Senedi' }} Hakkında Haberler</h5>
+                {# *** FIX: Use plain English text *** #}
+                <h5 class="card-title mb-0 text-dark fs-6">Latest News</h5>
             </div>
-            <div class="card-body">
+            <div class="card-body p-0"> {# p-0 to remove padding for list group flush #}
                 {% if articles and articles|length > 0 %}
-                    <div class="news-container list-group list-group-flush"> {# Liste grubu görünümü #}
+                    <div class="list-group list-group-flush news-container"> {# Added news-container class #}
                         {% for article in articles %}
-                            <a href="{{ article.url }}" target="_blank" class="list-group-item list-group-item-action border-bottom py-3">
-                                <div class="d-flex w-100 justify-content-between mb-1">
-                                    <h6 class="mb-0 news-title fs-6">{{ article.title }}</h6>
-                                    <small class="text-muted ms-3 flex-shrink-0">{{ article.date|format_date('%d %b %Y') }}</small> {# Tarih formatı #}
+                            <div class="list-group-item py-3 border-bottom"> {# Ensure bottom border #}
+                                <div class="row g-3 align-items-center">
+                                    {% if article.image_url %}
+                                    <div class="col-auto" style="width: 100px;">
+                                        {# *** FIX: Removed _() call *** #}
+                                        <img src="{{ article.image_url }}" class="img-fluid rounded" alt="News Image" style="height: 70px; width: 100%; object-fit: cover;" onerror="this.style.display='none'" loading="lazy"> {# onerror to hide broken images #}
+                                    </div>
+                                    {% endif %}
+                                    <div class="col">
+                                        <div class="d-flex w-100 justify-content-between mb-1">
+                                            <h6 class="mb-0 news-title fs-6">
+                                                <a href="{{ article.url }}" target="_blank" rel="noopener noreferrer" class="text-decoration-none text-dark stretched-link">{{ article.title[:120] }}{% if article.title|length > 120 %}...{% endif %}</a> {# Slightly longer title preview #}
+                                            </h6>
+                                            {# Use 'published_at' if available, fallback to 'date' #}
+                                            {% set display_date = article.published_at if article.published_at else article.date %}
+                                            <small class="text-muted ms-3 flex-shrink-0 text-nowrap" title="{{ display_date.isoformat() if display_date and isinstance(display_date, datetime) else display_date }}">
+                                                {% if display_date and isinstance(display_date, datetime) %}
+                                                     {% set time_diff = now() - display_date %}
+                                                     {% if time_diff.total_seconds() < 3600 %} {# Less than 1 hour #} {{ (time_diff.total_seconds() / 60) | round | int }} mins ago
+                                                     {% elif time_diff.total_seconds() < 86400 %} {# Less than 1 day #} {{ (time_diff.total_seconds() / 3600) | round | int }} hours ago
+                                                     {% elif time_diff.days < 7 %} {{ time_diff.days }} days ago
+                                                     {% else %} {{ display_date | format_date('%d %b %Y') }} {# Older format #}
+                                                     {% endif %}
+                                                 {% elif display_date %} {{ display_date | format_date('%d %b %Y') }} {# String date fallback #}
+                                                 {% else %} Date unknown
+                                                 {% endif %}
+                                            </small>
+                                        </div>
+                                        {% if article.description %}
+                                        <p class="mb-1 news-description small text-muted">{{ article.description[:200] }}{% if article.description|length > 200 %}...{% endif %}</p> {# Longer description preview #}
+                                        {% endif %}
+                                        {# Display source #}
+                                        {% if article.source %}
+                                        <small class="text-muted news-source d-inline-block text-truncate" style="max-width: 250px;" title="{{ article.source }}">
+                                            <i class="fas fa-globe-americas me-1"></i>{{ article.source }}
+                                        </small>
+                                        {% endif %}
+                                    </div>
                                 </div>
-                                <p class="mb-1 news-description small text-muted">{{ article.description }}</p>
-                                <small class="text-muted news-source">
-                                     <i class="fas fa-globe me-1"></i>{{ article.source }}
-                                 </small>
-                            </a>
+                            </div>
                         {% endfor %}
                     </div>
+                {% elif error_message %}
+                    {# Show error message if news fetch failed but stock data might exist #}
+                    <div class="alert alert-warning text-center m-3" role="alert">
+                        <i class="fas fa-exclamation-triangle me-2"></i> Could not load news. {{ error_message }}
+                    </div>
                 {% else %}
-                    <div class="no-news text-center py-5">
-                        <i class="far fa-newspaper fa-3x text-muted mb-3"></i>
-                        <p class="text-muted">Bu hisse senedi için güncel haber bulunamadı.</p>
+                     {# Show message if no articles were found #}
+                    <div class="alert alert-light text-center m-3" role="alert">
+                         <i class="far fa-newspaper me-2"></i> No relevant news articles found for this stock recently.
                     </div>
                 {% endif %}
             </div>
+             {# Optional: Add refresh button for news #}
+             {# <div class="card-footer text-end bg-transparent border-top-0 pt-0">
+                 <button id="refreshNewsBtn" class="btn btn-sm btn-outline-secondary py-0 px-1" title="Refresh News">
+                     <i class="fas fa-sync"></i>
+                 </button>
+             </div> #}
         </div>
     </div>
 </div>

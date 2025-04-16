@@ -233,11 +233,26 @@ body {
 .chart-container {
     position: relative;
     width: 100%;
-    /* Yükseklikler belirli grafikler için inline style ile ayarlanabilir */
+    max-width: 100%; /* Ensure charts don't exceed container width */
+    overflow: hidden; /* Prevent overflow */
+    margin: 0 auto; /* Center the chart */
 }
+
+/* Position ApexCharts toolbar on the left instead of right */
+.apexcharts-toolbar {
+    left: 3px !important;
+    right: auto !important;
+}
+
 .price-chart-container { height: 280px; } /* Ana fiyat grafiği yüksekliği */
-.volume-chart-container { height: 80px; } /* Genel bakış hacim grafiği */
-.details-chart-container { height: 300px; } /* Detay grafikleri */
+.volume-chart-container { 
+    height: 80px; 
+    max-width: 100%; /* Ensure volume chart fits container */ 
+}
+.details-chart-container { 
+    height: 300px; 
+    max-width: 100%; /* Ensure detail charts fit container */
+}
 #forecastChartContainer { min-height: 400px; } /* Tahmin grafiği min yüksekliği */
 
 

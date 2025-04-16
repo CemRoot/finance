@@ -1,151 +1,250 @@
 {# templates/tabs/overview.html #}
+
+{# --- Main conditional check: Only display content if stock_data is available and no major error occurred --- #}
+{# Note: 'error' is passed from the main index.html context #}
 {% if stock_data and not error %}
     <div class="row">
-        <!-- Özet Kartları -->
+        <!-- Summary Cards -->
         <div class="col-12">
-            <div class="row summary-cards g-3"> {# g-3 ile kartlar arası boşluk #}
-                <div class="col-xl-3 col-md-6">
-                    <div class="card h-100 shadow-sm border-0">
-                        <div class="card-body">
-                            <h5 class="card-title text-muted small text-uppercase mb-1">Son Kapanış</h5>
-                            <p class="card-text price fs-4 fw-semibold mb-0">
-                                {{ stock_data.current_price|format_number }}$ {# current_price kullanalım #}
+            <div class="row summary-cards g-3">
+                {# Last Close Card #}
+                <div class="col-lg-3 col-md-6 col-6 mb-3">
+                    <div class="card h-100 shadow-sm border-0 bg-light">
+                        <div class="card-body p-3">
+                            <h6 class="card-subtitle mb-2 text-muted small">Last Close</h6>
+                            {# Check specifically for current_price existence and non-null value #}
+                            <p class="card-text fw-bold text-dark mb-0 price">
+                                {{ stock_data.current_price | format_number(2) if stock_data.current_price is not none else 'N/A' }}
+                                {% if stock_data.currency %} {{ stock_data.currency }} {% endif %}
                             </p>
                         </div>
                     </div>
                 </div>
-                <div class="col-xl-3 col-md-6">
-                    <div class="card h-100 shadow-sm border-0">
-                        <div class="card-body">
-                            <h5 class="card-title text-muted small text-uppercase mb-1">Günlük Değişim</h5>
-                             <p class="card-text price fs-4 fw-semibold mb-0 {{ 'text-success' if stock_data.change_percent >= 0 else 'text-danger' }}">
-                                {{ stock_data.change_percent|format_number }}%
-                                {% if stock_data.change_percent is not none %}
-                                <i class="fas {{ 'fa-arrow-trend-up' if stock_data.change_percent >= 0 else 'fa-arrow-trend-down' }} ms-1 small"></i>
+                {# Daily Change Card #}
+                <div class="col-lg-3 col-md-6 col-6 mb-3">
+                    <div class="card h-100 shadow-sm border-0 bg-light">
+                        <div class="card-body p-3">
+                            <h6 class="card-subtitle mb-2 text-muted small">Daily Change</h6>
+                            {# Check for change_percent and apply conditional coloring #}
+                            {% set change = stock_data.change_percent %}
+                            <p class="card-text fw-bold mb-0 {{ 'text-success' if change is not none and change >= 0 else ('text-danger' if change is not none and change < 0 else 'text-dark') }}">
+                                {% if change is not none %}
+                                    {{ '%+.2f' | format(change) }}% {# Format with sign and 2 decimals #}
+                                {% else %}
+                                    N/A
                                 {% endif %}
                             </p>
                         </div>
                     </div>
                 </div>
-                 <div class="col-xl-3 col-md-6">
-                    <div class="card h-100 shadow-sm border-0">
-                        <div class="card-body">
-                            {# None olmayan en yüksek değeri bul #}
-                            {% set high_max = stock_data.high_values | reject('none') | list | max %}
-                            <h5 class="card-title text-muted small text-uppercase mb-1">En Yüksek ({{ stock_data.labels|length }} Kayıt)</h5>
-                            <p class="card-text price fs-4 fw-semibold mb-0">
-                                {{ high_max | format_number }}$
-                            </p>
+                {# High (Period) Card #}
+                <div class="col-lg-3 col-md-6 col-6 mb-3">
+                    <div class="card h-100 shadow-sm border-0 bg-light">
+                        <div class="card-body p-3">
+                            <h6 class="card-subtitle mb-2 text-muted small">High (Period)</h6>
+                            {# Use max filter on high_values, handle potential errors/empty list #}
+                            {% set high_vals = stock_data.high_values | reject('none') | list %}
+                            <p class="card-text fw-bold text-dark mb-0 price">
+                                {{ high_vals | max | format_number(2) if high_vals else 'N/A' }}
+                             </p>
                         </div>
                     </div>
                 </div>
-                <div class="col-xl-3 col-md-6">
-                    <div class="card h-100 shadow-sm border-0">
-                        <div class="card-body">
-                             {# None olmayan en düşük değeri bul #}
-                            {% set low_min = stock_data.low_values | reject('none') | list | min %}
-                            <h5 class="card-title text-muted small text-uppercase mb-1">En Düşük ({{ stock_data.labels|length }} Kayıt)</h5>
-                            <p class="card-text price fs-4 fw-semibold mb-0">
-                                {{ low_min | format_number }}$
-                            </p>
+                {# Low (Period) Card #}
+                <div class="col-lg-3 col-md-6 col-6 mb-3">
+                    <div class="card h-100 shadow-sm border-0 bg-light">
+                        <div class="card-body p-3">
+                             <h6 class="card-subtitle mb-2 text-muted small">Low (Period)</h6>
+                            {# Use min filter on low_values, handle potential errors/empty list #}
+                             {% set low_vals = stock_data.low_values | reject('none') | list %}
+                             <p class="card-text fw-bold text-dark mb-0 price">
+                                 {{ low_vals | min | format_number(2) if low_vals else 'N/A' }}
+                             </p>
                         </div>
                     </div>
                 </div>
             </div>
-        </div>
+        </div>{# End Summary Cards col-12 #}
 
-
-        <!-- Ana Grafik ve Sağ Panel -->
+        <!-- Main Chart and Right Panel -->
         <div class="col-lg-8 mt-4">
             <div class="card shadow-sm border-0 h-100">
-                 <div class="card-header bg-transparent border-0 pb-0"> {# Üst kenarlık ve arkaplanı kaldır #}
-                    <div class="d-flex justify-content-between align-items-center">
-                        <h5 class="card-title mb-0 fs-6 text-dark">Fiyat Grafiği</h5>
-                        <div class="btn-group btn-group-sm chart-type-selector" role="group">
-                             {# Buton grubu radio butonları ile güncellendi #}
+                 <div class="card-header bg-white border-0 pb-0"> {# Use bg-white for cleaner look #}
+                    <div class="d-flex justify-content-between align-items-center flex-wrap"> {# flex-wrap for smaller screens #}
+                        <h5 class="card-title mb-0 fs-6 text-dark me-3">Stock Price History</h5> {# Simpler Title #}
+                        {# Chart Type Selector (Candlestick/Line) #}
+                        <div class="btn-group btn-group-sm chart-type-selector ms-auto" role="group" aria-label="Chart Type Toggle">
                             <input type="radio" class="btn-check" name="chartType" id="candlestickRadio" autocomplete="off" data-chart-type="candlestick" checked>
-                            <label class="btn btn-outline-secondary" for="candlestickRadio"><i class="fas fa-chart-bar me-1"></i>Mum</label>
+                            <label class="btn btn-outline-secondary py-1 px-2" for="candlestickRadio"><i class="fas fa-chart-bar me-1"></i>Candle</label> {# Shortened Label #}
 
                             <input type="radio" class="btn-check" name="chartType" id="lineRadio" autocomplete="off" data-chart-type="line">
-                            <label class="btn btn-outline-secondary" for="lineRadio"><i class="fas fa-chart-line me-1"></i>Çizgi</label>
+                            <label class="btn btn-outline-secondary py-1 px-2" for="lineRadio"><i class="fas fa-chart-line me-1"></i>Line</label>
                         </div>
                     </div>
                  </div>
-                <div class="card-body pt-2"> {# Üst padding azaltıldı #}
-                    <div class="chart-container price-chart-container mb-2" style="height: 280px;"> {# Yükseklik ayarlandı #}
-                        <canvas id="priceChart"></canvas> {# JS bunu doldurur #}
+                <div class="card-body pt-2">
+                    {# Container for the main price chart (JS target) #}
+                    <div class="chart-container price-chart-container mb-2" style="height: 300px;"> {# Slightly taller #}
+                        <canvas id="priceChart"></canvas> {# Target for script.js #}
                     </div>
-                    <div class="chart-footer text-end border-top pt-2"> {# Alt border eklendi #}
-                        <small class="text-muted" style="font-size: 0.75rem;"> {# Font küçültüldü #}
-                            <i class="fas fa-clock me-1"></i><span class="last-updated">{{ stock_data.timestamp|format_date('%d.%m.%Y %H:%M:%S %Z') }}</span> {# Format güncellendi #}
-                            <button id="refreshStockBtn" class="btn btn-sm btn-outline-secondary ms-2 py-0 px-1" title="Yenile"> {# Title eklendi #}
+                    {# Chart Footer with Timestamp and Refresh Button #}
+                    <div class="chart-footer text-end border-top pt-2">
+                        <small class="text-muted" style="font-size: 0.75rem;">
+                            <i class="fas fa-clock me-1"></i>Last Updated:
+                            {# Display timestamp, format using filter #}
+                            <span class="last-updated">{{ stock_data.timestamp | format_date('%d %b %Y %H:%M:%S %Z') if stock_data.timestamp else 'N/A' }}</span>
+                            {# Refresh Button (JS target) #}
+                            <button id="refreshStockBtn" class="btn btn-sm btn-outline-secondary ms-2 py-0 px-1" title="Refresh Data">
                                 <i class="fas fa-sync"></i>
                             </button>
                         </small>
                     </div>
                 </div>
             </div>
-        </div>
+        </div>{# End Main Chart col-lg-8 #}
 
-        <!-- Sağ Panel: Detaylı Analiz Özeti -->
+        <!-- Right Panel: Quick Analysis -->
         <div class="col-lg-4 mt-4">
             <div class="card shadow-sm border-0 h-100">
                 <div class="card-body d-flex flex-column">
-                    <h5 class="card-title fs-6 mb-3 text-dark">Hızlı Analiz</h5>
-                    <div class="analysis-metrics mb-3">
-                        {# None olmayan son hacmi bul #}
+                    <h5 class="card-title fs-6 mb-3 text-dark">Quick Analysis</h5>
+
+                    {# --- Volume Analysis --- #}
+                    <div class="analysis-section mb-3 pb-2 border-bottom">
+                        <h6 class="section-title small text-muted text-uppercase mb-2">Volume</h6>
+                        {# Last Volume #}
                         {% set last_volume = (stock_data.volume_values | reject('none') | list or [None])[-1] %}
-                        <div class="metric d-flex justify-content-between border-bottom pb-1 mb-1">
-                            <span class="metric-label small text-muted">Son Hacim</span>
-                            <span class="metric-value fw-medium">{{ last_volume|format_number(0) }}</span>
+                        <div class="metric d-flex justify-content-between mb-1">
+                            <span class="metric-label small">Last Volume</span>
+                            <span class="metric-value fw-medium">{{ last_volume | format_number(0) if last_volume is not none else 'N/A' }}</span>
                         </div>
-                        <div class="metric d-flex justify-content-between border-bottom pb-1 mb-1">
-                            <span class="metric-label small text-muted">Ort. Hacim</span>
-                            <span class="metric-value fw-medium">{{ stock_data['volume_values']|calculate_average }}</span>
+                        {# Average Volume #}
+                        <div class="metric d-flex justify-content-between mb-1">
+                             <span class="metric-label small">Avg Volume (Period)</span>
+                             {# Use calculate_average filter defined in app.py #}
+                             <span class="metric-value fw-medium">{{ stock_data.volume_values | calculate_average }}</span>
                         </div>
-                         <div class="metric d-flex justify-content-between border-bottom pb-1 mb-1">
-                            <span class="metric-label small text-muted">Volatilite (Yıllık)</span>
-                             {# volatility_metric app.py'den geliyor #}
-                             <span class="metric-value fw-medium">{{ '%.2f%%'|format(volatility_metric * 100) if volatility_metric is not none else 'N/A' }}</span>
-                        </div>
-                    </div>
-
-                    <!-- Teknik Göstergeler Özeti -->
-                    <h6 class="mt-3 fs-6 text-dark">Teknik Sinyaller</h6>
-                    <div class="technical-indicators mb-3">
-                         {# sma_status ve rsi_status app.py'den geliyor #}
-                        <div class="indicator d-flex justify-content-between pb-1 mb-1">
-                             <span class="indicator-label small text-muted">SMA(20) Durumu</span>
-                             <span class="indicator-value fw-medium {{ 'text-success' if sma_status == 'Üzerinde' else ('text-danger' if sma_status == 'Altında' else 'text-secondary') }}">
-                                 {{ sma_status if sma_status else 'N/A' }}
-                             </span>
-                         </div>
-                         <div class="indicator d-flex justify-content-between pb-1 mb-1">
-                             <span class="indicator-label small text-muted">RSI(14) Durumu</span>
-                             <span class="indicator-value fw-medium {{ 'text-danger' if rsi_status == 'Aşırı Alım' else ('text-success' if rsi_status == 'Aşırı Satım' else ('text-warning' if rsi_status == 'Nötr' else 'text-secondary')) }}">
-                                 {{ rsi_status if rsi_status else 'N/A' }}
-                             </span>
+                         {# Small Volume Trend Chart #}
+                         <div class="mt-2">
+                              <div class="chart-container volume-chart-container" style="height: 60px;"> {# Reduced height slightly #}
+                                   <canvas id="volumeChart"></canvas> {# Target for script.js #}
+                               </div>
                          </div>
                     </div>
 
-                    <!-- Mini Hacim Grafiği -->
-                    <div class="mt-auto pt-2">
-                         <h6 class="fs-6 mb-1 text-dark">Hacim Trendi</h6>
-                        <div class="chart-container volume-chart-container" style="height: 80px;"> {# Daha küçük yükseklik #}
-                            <canvas id="volumeChart"></canvas> {# JS bunu doldurur #}
+                    {# --- Technical Indicators --- #}
+                    {# Check if tech_indicators dict exists and is not empty #}
+                    {% if tech_indicators %}
+                    <div class="analysis-section mb-3 pb-2 border-bottom">
+                         <h6 class="section-title small text-muted text-uppercase mb-2">Technical Signals</h6>
+                         {# Volatility #}
+                        <div class="indicator d-flex justify-content-between mb-1">
+                             <span class="indicator-label small">Volatility (Ann.)</span>
+                             <span class="indicator-value fw-medium">
+                                 {% set vol = tech_indicators.get('volatility') %}
+                                 {% if vol is not none and isinstance(vol, (int, float)) %}
+                                     {{ '%.1f%%'|format(vol * 100) }} {# Format as percentage #}
+                                 {% else %} N/A {% endif %}
+                             </span>
                         </div>
+                         {# SMA #}
+                         <div class="indicator d-flex justify-content-between mb-1">
+                              <span class="indicator-label small">Price vs SMA(20)</span>
+                              {% set sma_status = tech_indicators.get('sma') %}
+                              <span class="indicator-value fw-medium {{ 'text-success' if sma_status == 'Above' else ('text-danger' if sma_status == 'Below' else 'text-secondary') }}">
+                                  {{ sma_status if sma_status else 'N/A' }}
+                              </span>
+                          </div>
+                          {# RSI #}
+                          <div class="indicator d-flex justify-content-between mb-1">
+                              <span class="indicator-label small">RSI(14) Status</span>
+                               {% set rsi_status = tech_indicators.get('rsi') %}
+                              <span class="indicator-value fw-medium {{ 'text-danger' if rsi_status == 'Overbought' else ('text-success' if rsi_status == 'Oversold' else ('text-warning' if rsi_status == 'Neutral' else 'text-secondary')) }}">
+                                  {{ rsi_status if rsi_status else 'N/A' }}
+                              </span>
+                          </div>
+                          {# MACD #}
+                          <div class="indicator d-flex justify-content-between mb-1">
+                              <span class="indicator-label small">MACD Signal</span>
+                              {% set macd_status = tech_indicators.get('macd') %}
+                              <span class="indicator-value fw-medium {{ 'text-success' if macd_status == 'Buy Signal (Positive)' else ('text-danger' if macd_status == 'Sell Signal (Negative)' else 'text-secondary') }}">
+                                  {{ macd_status if macd_status else 'N/A' }}
+                                  {# Display MACD histogram value if available #}
+                                  {% if tech_indicators.get('macd_hist') is not none %}
+                                      <small class="text-muted">({{ tech_indicators.macd_hist | format_number(3) }})</small>
+                                  {% endif %}
+                              </span>
+                          </div>
+                          {# Bollinger Bands #}
+                          <div class="indicator d-flex justify-content-between mb-1">
+                              <span class="indicator-label small">Bollinger Bands(20,2)</span>
+                              {% set bbands_status = tech_indicators.get('bbands') %}
+                              <span class="indicator-value fw-medium {{ 'text-success' if bbands_status and 'Lower' in bbands_status else ('text-danger' if bbands_status and 'Upper' in bbands_status else 'text-secondary') }}">
+                                  {{ bbands_status if bbands_status else 'N/A' }}
+                                  {# Display middle band value if available #}
+                                   {% if tech_indicators.get('bbands_mid') is not none %}
+                                      <small class="text-muted">(Mid: {{ tech_indicators.bbands_mid | format_number(2) }})</small>
+                                  {% endif %}
+                              </span>
+                          </div>
                     </div>
+                    {% else %}
+                    {# Show message if tech indicators are not available #}
+                    <div class="alert alert-light small p-2 text-center">Technical indicators not available.</div>
+                    {% endif %}
+
+                     {# Placeholder for future additions? #}
+                     <div class="mt-auto pt-2">
+                         {# Can add other quick stats here #}
+                     </div>
+                </div> {# End card-body #}
+            </div> {# End card #}
+        </div> {# End Right Panel col-lg-4 #}
+
+        {# --- Detailed Analysis Charts (Moved from separate tab) --- #}
+        <div class="col-12 mt-4">
+            <div class="card shadow-sm border-0">
+                <div class="card-header bg-light border-0">
+                    <h5 class="card-title mb-0 fs-6 text-dark">Detailed Price Action</h5>
                 </div>
-            </div>
-        </div>
-    </div> {# Kapanan .row (Genel Bakış İçeriği) #}
+                <div class="card-body">
+                    <div class="row g-4">
+                        {# Open/Close Chart #}
+                        <div class="col-lg-6">
+                             <h6 class="card-subtitle mb-2 text-muted small text-uppercase">Open vs. Close Price</h6>
+                             <div class="chart-container details-chart-container" style="height: 250px;">
+                                 <canvas id="openCloseChart"></canvas> {# Target for script.js #}
+                             </div>
+                        </div>
+                        {# High/Low Chart #}
+                        <div class="col-lg-6">
+                             <h6 class="card-subtitle mb-2 text-muted small text-uppercase">High / Low Range</h6>
+                             <div class="chart-container details-chart-container" style="height: 250px;">
+                                 <canvas id="highLowChart"></canvas> {# Target for script.js #}
+                             </div>
+                        </div>
+                        {# Detailed Volume Chart #}
+                         <div class="col-lg-12 mt-3"> {# Added mt-3 for spacing #}
+                            <h6 class="card-subtitle mb-2 text-muted small text-uppercase">Volume Details</h6>
+                            <div class="chart-container details-chart-container" style="height: 200px;">
+                                <canvas id="detailVolumeChart"></canvas> {# Target for script.js #}
+                            </div>
+                        </div>
+                    </div>
+                </div> {# End card-body #}
+            </div> {# End card #}
+        </div> {# End Detailed Analysis col-12 #}
+
+    </div> {# End main row #}
+
 {% else %}
-     {# stock_data yoksa veya hata varsa gösterilecek mesaj #}
+    {# --- Fallback Message: Displayed if stock_data is None or error is True --- #}
      <div class="alert alert-light text-center mt-4">
-        <i class="fas fa-chart-line fa-2x text-muted mb-3"></i><br>
-        Genel bakış verileri yüklenemedi.
-        {% if error_message %}
-            <br><small class="text-danger">Hata: {{ error_message }}</small>
-        {% endif %}
-    </div>
-{% endif %} {# if stock_data and not error sonu #}
+         <i class="fas fa-chart-line fa-2x text-muted mb-3"></i><br>
+         Stock data could not be loaded.
+         {# Display the specific error message passed from Flask if available #}
+         {% if error_message %}
+             <br><small class="text-danger">Reason: {{ error_message }}</small>
+         {% endif %}
+     </div>
+{% endif %} {# End main conditional check #}

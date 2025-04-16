@@ -1,263 +1,142 @@
 {% extends 'base.html' %}
 
 {% block title %}
-    Finansal Analiz Dashboard {% if stock %}- {{ stock }}{% endif %}
+    Financial Analysis Dashboard {% if stock %}- {{ stock }}{% endif %}
 {% endblock %}
 
 {% block content %}
+    {# Check if a stock symbol is actively being displayed #}
     {% if stock %}
-        {# Hisse senedi seçiliyse Dashboard Header'ı göster #}
+        {# Include the header specific to the selected stock #}
+        {# It requires 'stock', 'stock_data', and 'decision' variables #}
         {% include 'partials/_dashboard_header.html' %}
 
+        {# Display a prominent error message if stock data fetching failed #}
         {% if error %}
-            {# Hata varsa, header altında genel bir hata mesajı gösterilebilir #}
              <div class="alert alert-danger mt-3" role="alert">
               <i class="fas fa-exclamation-triangle me-2"></i>
+              <strong>Error:</strong>
+              {# Display the specific error message from the backend #}
               {% if error_message %}
-                 {{ error_message }} Lütfen sembolü kontrol edin veya daha sonra tekrar deneyin.
+                  {{ error_message }} Please check the symbol or try again later.
               {% else %}
-                 {{ stock }} için veri yüklenirken bir sorun oluştu.
+                  There was a problem loading data for {{ stock }}.
               {% endif %}
             </div>
         {% endif %}
 
-        {# Hata olsa bile tab yapısını gösterelim, içerikleri şartlı render edebiliriz #}
-        <div class="tab-content mt-3" id="dashboardTabContent">
-            <!-- Genel Bakış Sekmesi -->
-            <div id="overview" class="tab-pane fade show active" role="tabpanel" aria-labelledby="overview-tab">
+        {# Main Tab Content Area - Only show tabs if there wasn't a complete data loading failure #}
+        {# We might still show tabs even if only news failed, hence check for stock_data existence #}
+        {# If stock_data is None due to error, overview will show its own error message #}
+         <div class="tab-content mt-3" id="dashboardTabContent">
+
+            <!-- Overview Tab Pane -->
+            {# This tab needs 'stock_data' and 'tech_indicators' #}
+            {# It also implicitly uses 'error' and 'error_message' for its internal display logic #}
+            <div class="tab-pane fade show active" id="overview" role="tabpanel" aria-labelledby="overview-tab">
                 {% include 'tabs/overview.html' %}
             </div>
 
-            <!-- Haberler Sekmesi -->
-            <div id="news" class="tab-pane fade" role="tabpanel" aria-labelledby="news-tab">
+            <!-- News Tab Pane -->
+            {# This tab needs 'articles' and potentially 'now' for date formatting #}
+             {# Also pass 'error_message' to show if news loading failed #}
+            <div class="tab-pane fade" id="news" role="tabpanel" aria-labelledby="news-tab">
                 {% include 'tabs/news.html' %}
             </div>
 
-            <!-- Detaylı Analiz Sekmesi -->
-            <div id="details" class="tab-pane fade" role="tabpanel" aria-labelledby="details-tab">
-                {% include 'tabs/details.html' %}
+            <!-- Details Tab Pane (Content moved to Overview) -->
+            {# This tab primarily shows a message now #}
+            <div class="tab-pane fade" id="details" role="tabpanel" aria-labelledby="details-tab">
+                 {% include 'tabs/details.html' %} {# Include the placeholder message #}
             </div>
 
-            <!-- Tahmin Sekmesi -->
-            <div id="forecast" class="tab-pane fade" role="tabpanel" aria-labelledby="forecast-tab">
+            <!-- Forecasting Tab Pane -->
+            {# This tab primarily relies on AJAX calls triggered by forecast.js #}
+            {# Pass the stock symbol for AJAX calls #}
+            {# Initial state can show loading or prompt based on JS logic #}
+            <div class="tab-pane fade" id="forecasting" role="tabpanel" aria-labelledby="forecasting-tab">
+                 {# Include the forecast template structure. JS will handle loading. #}
+                 {# Pass stock symbol needed for JS #}
                  {% include 'tabs/forecast.html' %}
+                 {# Note: Removed forecast_data, decision_data, sentiment_data from here as they are loaded via AJAX #}
             </div>
-        </div> {# Kapanan .tab-content #}
+
+        </div> {# End .tab-content #}
 
     {% else %}
-        {# Hisse senedi seçilmemişse Hoşgeldin ekranını göster #}
+        {# No stock symbol selected, show the welcome screen #}
         {% include 'partials/_welcome.html' %}
-    {% endif %} {# if stock sonu #}
+    {% endif %} {# End if stock #}
 {% endblock %}
 
-
 {% block scripts %}
-    {# Sadece hisse senedi verisi başarıyla yüklendiyse grafik scriptlerini ekle #}
+    {# Include the script that initializes the global window.stockData variable #}
+    <script src="{{ url_for('static', filename='js/stock-data-loader.js') }}"></script>
+
+    {# Pass data from Flask to JavaScript using data attributes instead of embedding Jinja in JS #}
+    <div id="flask-data" 
+        data-stock="{% if stock %}{{ stock }}{% else %}{% endif %}"
+        data-has-error="{% if error %}true{% else %}false{% endif %}"
+        style="display:none;">
+    </div>
+
     {% if stock_data and not error %}
-    <script type="text/javascript">
-        // Global değişkenler (veriyi base64 ile kodlayarak XSS riskini azaltalım)
-        try {
-             window.stockData = JSON.parse(atob('{{ stock_data_json | tojson | b64encode | safe }}'));
-             // window.stockData = JSON.parse('{{ stock_data_json|tojson|safe }}'); // Alternatif (daha az güvenli)
-             console.log("Stock data loaded for charts:", window.stockData);
-        } catch(e) {
-            console.error("Error parsing stock_data_json:", e);
-            window.stockData = null; // Hata durumunda null yap
-             // Kullanıcıya bilgi ver
-             const overviewTab = document.getElementById('overview');
-             if(overviewTab) {
-                 overviewTab.innerHTML = '<div class="alert alert-warning">Grafik verileri yüklenirken bir sorun oluştu.</div>';
-             }
-        }
-        window.priceChart = null;
-        window.volumeChart = null;
-        window.openCloseChart = null;
-        window.detailVolumeChart = null;
-        window.highLowChart = null;
-
-        // Grafik oluşturma fonksiyonları (script.js içine taşınabilir veya burada kalabilir)
-        // ÖNEMLİ: Bu fonksiyonların var olan script.js'deki fonksiyonlarla çakışmadığından emin olun.
-        // Gerekirse script.js'dekileri kaldırıp sadece buradakileri kullanın veya tam tersi.
-        // Aşağıdaki fonksiyonlar örnek olarak bırakılmıştır, script.js'dekiler daha güncel olabilir.
-
-        // Örnek: createPriceChart (Diğerlerini de benzer şekilde güncelleyin)
-        function createPriceChart(chartType = 'candlestick') {
-             const ctx = document.getElementById('priceChart');
-             if (!ctx || !window.stockData || !window.stockData.candlestick_data) {
-                 console.warn("Price chart cannot be created: Missing element or data.");
-                 if(ctx) ctx.innerHTML = "<p class='text-muted text-center small p-3'>Fiyat grafiği için veri yok.</p>";
-                 return;
-             }
-             if (window.priceChart) window.priceChart.destroy(); // Önceki grafiği temizle
-
-             const candleData = window.stockData.candlestick_data.map(d => {
-                 try { return { x: luxon.DateTime.fromISO(d.t).valueOf(), o: d.o, h: d.h, l: d.l, c: d.c }; }
-                 catch (e) { console.error(`Invalid date format (candle): ${d.t}`, e); return null; }
-             }).filter(d => d !== null);
-
-             const lineData = window.stockData.labels.map((label, index) => {
-                 try {
-                     // Hem label hem de value'nun geçerli olduğundan emin ol
-                     if (index < window.stockData.values.length && window.stockData.values[index] !== null) {
-                          return { x: luxon.DateTime.fromISO(label).valueOf(), y: window.stockData.values[index] };
-                     }
-                     return null;
-                 } catch (e) { console.error(`Invalid date format or value (line): ${label}`, e); return null; }
-             }).filter(d => d !== null);
-
-            const commonOptions = {
-                responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
-                scales: {
-                    x: { type: 'time', time: { unit: 'day', tooltipFormat: 'DD MMM YYYY', displayFormats: { day: 'DD MMM' } }, grid: { display: false }, ticks: { autoSkip: true, maxTicksLimit: 10, source: 'auto' } },
-                    y: { beginAtZero: false, grid: { color: 'rgba(200, 200, 200, 0.1)' }, ticks: { callback: value => typeof value === 'number' ? `${value.toFixed(2)}$` : value } }
-                },
-                 plugins: { legend: { display: chartType !== 'candlestick' }, tooltip: { enabled: true } }
-             };
-
-             let chartConfig;
-             if (chartType === 'candlestick') {
-                 if (candleData.length === 0) {
-                     console.warn("No valid data for candlestick chart.");
-                     ctx.innerHTML = "<p class='text-muted text-center small p-3'>Mum grafiği için veri yok.</p>";
-                     return;
-                 }
-                 chartConfig = {
-                     type: 'candlestick', data: { datasets: [{ label: 'Fiyat', data: candleData }] },
-                     options: { ...commonOptions, plugins: { ...commonOptions.plugins, tooltip: { callbacks: { label: function(context) { /* ... tooltip callback ... */ } } } } }
-                 };
-             } else { // Line chart
-                 if (lineData.length === 0) {
-                      console.warn("No valid data for line chart.");
-                      ctx.innerHTML = "<p class='text-muted text-center small p-3'>Çizgi grafiği için veri yok.</p>";
-                      return;
-                 }
-                 chartConfig = {
-                     type: 'line', data: { datasets: [{ label: 'Kapanış Fiyatı', data: lineData, borderColor: 'rgba(54, 162, 235, 1)', backgroundColor: 'rgba(54, 162, 235, 0.1)', borderWidth: 1.5, tension: 0.1, pointRadius: 0, fill: true }] },
-                     options: commonOptions
-                 };
-             }
-
-             try { window.priceChart = new Chart(ctx.getContext('2d'), chartConfig); }
-             catch (e) { console.error("Ana Fiyat Grafiği oluşturulurken hata:", e); if(ctx) ctx.innerHTML = "<p class='text-danger text-center small'>Fiyat grafiği yüklenemedi.</p>"; }
-         }
-
-        // Diğer grafik oluşturma fonksiyonları (createVolumeChart, createOpenCloseChart vb.) buraya eklenebilir veya script.js'den çağrılabilir.
-         function createVolumeChart() {
-             const ctx = document.getElementById('volumeChart');
-             if (!ctx || !window.stockData || !window.stockData.volume_values || !window.stockData.labels) {
-                 console.warn("Volume chart cannot be created: Missing element or data.");
-                 if(ctx) ctx.parentElement.innerHTML = ""; // Hacim grafiği alanını temizle
-                 return;
-             }
-             if (window.volumeChart) window.volumeChart.destroy();
-
-             const labels = window.stockData.labels.map(label => { try { return luxon.DateTime.fromISO(label).valueOf(); } catch (e) { return null; } }).filter(l => l !== null);
-             const volumeData = window.stockData.volume_values;
-             if (labels.length !== volumeData.length) { console.warn("Volume chart: Label and data count mismatch."); return; }
-             if (volumeData.length === 0) { console.warn("No data for volume chart."); if(ctx) ctx.parentElement.innerHTML = ""; return; }
-
-
-             try { window.volumeChart = new Chart(ctx.getContext('2d'), { type: 'bar', data: { labels: labels, datasets: [{ label: 'İşlem Hacmi', data: volumeData, backgroundColor: 'rgba(153, 102, 255, 0.6)', borderColor: 'rgba(153, 102, 255, 1)', borderWidth: 1 }] }, options: { responsive: true, maintainAspectRatio: false, scales: { x: { type: 'time', time: { unit: 'day' }, display: false }, y: { beginAtZero: true, display: false } }, plugins: { legend: { display: false }, tooltip: { enabled: false } } } }); }
-             catch (e) { console.error("Volume Chart (Overview) creation error:", e); if(ctx) ctx.parentElement.innerHTML = "<p class='text-danger text-center small'>Hacim grafiği yüklenemedi.</p>"; }
-         }
-
-         // Diğer grafik fonksiyonları (createOpenCloseChart, createDetailVolumeChart, createHighLowChart) benzer şekilde güncellenmeli
-
-        // Olay dinleyicileri ve ilk grafik oluşturma
-        document.addEventListener('DOMContentLoaded', function() {
-            console.log("DOM loaded, initializing charts and listeners...");
-             if (window.stockData) {
-                 // Ana fiyat grafiğini varsayılan olarak mum grafiği ile başlat
-                 createPriceChart('candlestick');
-                 // Hacim grafiğini başlat
-                 createVolumeChart();
-                 // Diğer grafikler ilgili sekmeler açıldığında veya burada yüklenebilir
-                 // createOpenCloseChart();
-                 // createDetailVolumeChart();
-                 // createHighLowChart();
-
-                 // Grafik tipi değiştirme butonları
-                 const chartTypeButtons = document.querySelectorAll('.chart-type-selector button');
-                 chartTypeButtons.forEach(button => {
-                     button.addEventListener('click', function() {
-                         chartTypeButtons.forEach(btn => btn.classList.remove('active'));
-                         this.classList.add('active');
-                         const chartType = this.getAttribute('data-chart-type');
-                         console.log("Changing chart type to:", chartType);
-                         createPriceChart(chartType); // Seçilen tipte grafiği yeniden oluştur
-                     });
-                 });
-
-                // Yenileme butonu için olay dinleyici (script.js içinde zaten olabilir, kontrol edin)
-                 const refreshBtn = document.getElementById('refreshStockBtn');
-                 if (refreshBtn && typeof refreshStockData === 'function') { // script.js'deki fonksiyon varsa
-                    refreshBtn.addEventListener('click', function() {
-                        console.log("Refresh button clicked.");
-                        refreshStockData(); // script.js'deki fonksiyonu çağır
-                    });
-                 } else if(refreshBtn) {
-                     console.warn("refreshStockData function not found, refresh button might not work.");
-                 }
-
-
-             } else {
-                  console.warn("Chart initialization skipped: window.stockData is not available.");
-                  // Hata durumunda grafik alanlarında mesaj göster
-                  document.getElementById('priceChart')?.closest('.chart-container')?.innerHTML = "<p class='text-muted text-center small p-3'>Grafik için yeterli veri yüklenemedi.</p>";
-                  document.getElementById('volumeChart')?.closest('.chart-container')?.innerHTML = "";
-                  // Diğer grafik alanlarını da temizle/bilgilendir
-             }
-
-             // Tahmin sekmesi gösterildiğinde Plotly grafiğini yeniden boyutlandır
-             const forecastTabLink = document.querySelector('a[data-bs-toggle="pill"][href="#forecast"]');
-             if (forecastTabLink) {
-                 forecastTabLink.addEventListener('shown.bs.tab', function () {
-                     console.log("Forecast tab shown, attempting to resize Plotly chart.");
-                     const forecastChartElement = document.getElementById('forecastChart');
-                     // forecast.js'den Plotly nesnesini almayı dene (eğer global ise)
-                     // veya doğrudan Plotly.Plots.resize kullan
-                     if (forecastChartElement && typeof Plotly !== 'undefined') {
-                          try {
-                              // Grafiğin yüklenmesini beklemek için kısa bir gecikme eklenebilir
-                              setTimeout(() => {
-                                   Plotly.Plots.resize(forecastChartElement);
-                                   console.log("Plotly chart resized.");
-                              }, 100); // 100ms bekle
-                          } catch(e) {
-                               console.error("Plotly resize error:", e);
-                          }
-                     } else {
-                          console.warn("Forecast tab shown, but Plotly chart element or Plotly library not found.");
-                     }
-                 });
-             } else {
-                  console.warn("Forecast tab link not found.");
-             }
-
-              // Detaylar sekmesi gösterildiğinde Chart.js grafiklerini yeniden boyutlandır (gerekirse)
-              const detailsTabLink = document.querySelector('a[data-bs-toggle="pill"][href="#details"]');
-               if (detailsTabLink) {
-                   detailsTabLink.addEventListener('shown.bs.tab', function () {
-                       console.log("Details tab shown, resizing charts if needed.");
-                       [window.openCloseChart, window.detailVolumeChart, window.highLowChart].forEach(chart => {
-                           if (chart && typeof chart.resize === 'function') {
-                               try { chart.resize(); } catch(e) { console.error("Chart.js resize error:", e); }
-                           }
-                       });
-                   });
-               }
-
-               // Sayfa ilk yüklendiğinde eğer stock varsa ve forecast.js yüklendiyse, tahmini yükle
-               const initialStockSymbol = document.getElementById('stock')?.value;
-               if (initialStockSymbol && typeof loadForecastData === 'function') {
-                   console.log(`Initial stock symbol found (${initialStockSymbol}), loading forecast data.`);
-                   loadForecastData(initialStockSymbol);
-               } else if (initialStockSymbol) {
-                   console.warn("Initial stock symbol found, but loadForecastData function is not available.");
-               }
-
-
-        }); // DOMContentLoaded Sonu
+    <script id="stock-data-json" type="application/json">
+        {{ stock_data | safe }}
     </script>
-    {% endif %} {# if stock_data and not error sonu #}
+    {% endif %}
+    
+    {# Now use those data attributes in pure JavaScript #}
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log("index.html: DOMContentLoaded - Initializing window.stockData");
+        
+        // Get data from the hidden div element
+        const dataElement = document.getElementById('flask-data');
+        const stockSymbol = dataElement.dataset.stock || null;
+        const hasError = dataElement.dataset.hasError === 'true';
+        
+        // Get stock data from the JSON script tag if it exists
+        let initialStockData = null;
+        const stockDataScript = document.getElementById('stock-data-json');
+        if (stockDataScript) {
+            try {
+                initialStockData = JSON.parse(stockDataScript.textContent);
+            } catch (e) {
+                console.error("Error parsing stock data JSON:", e);
+            }
+        }
+        
+        if (initialStockData && !hasError) {
+            try {
+                // Use the initializer function from stock-data-loader.js
+                initializeStockData(initialStockData);
+            } catch (e) {
+                console.error("Error processing initial stock data:", e);
+                // Set to null if processing fails
+                setEmptyStockData();
+                // Optionally show a flash message about the data issue
+                showFlashMessage("Failed to load initial stock data structure.", "danger");
+            }
+        } else if (hasError) {
+            // If Flask reported an error, ensure JS knows there's no valid data
+            console.warn("index.html: Flask reported an error, setting empty stock data.");
+            setEmptyStockData();
+        } else {
+            // No stock selected or other case where stock_data is not available
+            console.log("index.html: No initial stock data passed from Flask.");
+            setEmptyStockData();
+        }
+
+        // Trigger forecast load if forecast tab exists and stock symbol is present
+        // Note: forecast.js now handles its own loading based on symbol, this might be redundant
+        /*
+        const forecastTab = document.getElementById('forecasting');
+        if (forecastTab && stockSymbol) {
+            console.log("index.html: Triggering initial forecast load for " + stockSymbol);
+            loadForecastData(stockSymbol); // Assuming loadForecastData is globally available from forecast.js
+        }
+        */
+    });
+    </script>
 {% endblock %}

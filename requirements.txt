@@ -1,15 +1,40 @@
-Flask>=2.3,<3.1 # Flask 3 uyumluluğu için üst sınır
-Werkzeug>=2.3,<3.1 # Werkzeug 3 uyumluluğu için üst sınır
-requests>=2.31,<3.0
-pandas>=2.0,<2.3 # Pandas 2.x Python 3.12 ile daha uyumlu
+# requirements.txt
+
+# Core Flask framework
+Flask>=2.3,<3.1
+Werkzeug>=2.3,<3.1
+
+# Data Handling & Numerics
+pandas>=2.0,<2.3
+numpy>=1.26,<2.0
+
+# Finance Data & APIs
 yfinance>=0.2.36,<0.3.0
-numpy>=1.26,<2.0 # Numpy 1.26+ Python 3.12 için önerilir
-scikit-learn>=1.3,<1.5
-torch>=2.1,<2.4 # torch sürümünü sabit tutabilir veya güncelleyebiliriz
-transformers>=4.35,<4.42
-python-dotenv>=1.0,<1.1
+requests>=2.31,<3.0
+python-dotenv>=1.0,<1.1 # For loading environment variables (like API keys)
+
+# Machine Learning & NLP
+torch>=2.1,<2.4         # PyTorch core
+transformers>=4.35,<4.42 # Hugging Face transformers (for FinBERT)
+# Note: Ensure CUDA toolkit compatibility if using GPU with torch
+
+# Forecasting
+prophet>=1.1.5,<1.2     # Prophet library
+cmdstanpy>=1.2          # Dependency for Prophet
+
+# Technical Analysis
+# Using the development branch of pandas-ta via git
+git+https://github.com/twopirllc/pandas-ta.git@development
+
+# Plotting (Primarily for backend if generating plots there, Plotly JS used in frontend)
 plotly>=5.18,<5.23
-beautifulsoup4>=4.12,<4.13
-prophet>=1.1.5,<1.2 # Prophet'in en son stabil sürümünü deneyelim
-pytz # Sürüm belirtmeden
-cmdstanpy>=1.2 # Prophet'in bağımlılığı
+# beautifulsoup4>=4.12,<4.13 # Seems unused in current Python code, maybe remove?
+
+# Timezones
+pytz
+
+# Caching
+Flask-Caching>=2.0,<2.2
+
+# Optional but recommended for production deployment
+# gunicorn # Example WSGI server

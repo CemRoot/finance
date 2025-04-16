@@ -1,341 +1,344 @@
 # app.py
-from flask import Flask, render_template, request, jsonify, flash, redirect, url_for
+from flask import Flask, render_template, request, jsonify, flash, redirect, url_for, session
+from flask_caching import Cache
 import src.newsapi as newsapi
-import src.decision as decision
+import src.decision as decision # Decision module
+import src.forecasting as forecasting # Forecasting module
+import src.sentiment as sentiment # Sentiment module
 import json
-import src.forecasting as forecasting
-import src.sentiment # sentiment modülünü import et (karar için gerekli)
-import pandas as pd # pd import edildi
+import pandas as pd
 import numpy as np
-from datetime import datetime
+from datetime import datetime, timedelta
 import time
 from functools import wraps
-import logging # Logging ekle
-import os # os import edildi
-import pytz # pytz import edildi
-import base64 # base64 import edildi (JSON encode/decode için)
+import logging
+import os
+import pytz
+import pandas_ta as ta # Technical Analysis library
+import jinja2 # Import jinja2 for exception handling
 
-# Flask Uygulaması
+# Flask Application and Cache Configuration
 app = Flask(__name__)
+app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'dev-secret-key-should-be-changed')
+cache_config = { "CACHE_TYPE": "SimpleCache", "CACHE_DEFAULT_TIMEOUT": 300 } # 5 minutes default cache
+cache = Cache(config=cache_config)
+cache.init_app(app)
 
-# Gizli Anahtar
-app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'dev-secret-key-should-be-changed') # Geliştirme anahtarı
-
-# Logging Ayarları
+# Logging Setup
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
-# Flask'ın kendi logger'ını da yapılandıralım
-app.logger.handlers.clear() # Varsayılan handler'ları temizle
+app.logger.handlers.clear()
 handler = logging.StreamHandler()
-formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s - %(message)s')
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s - [%(funcName)s] - %(message)s') # Added function name
 handler.setFormatter(formatter)
 app.logger.addHandler(handler)
-app.logger.setLevel(logging.INFO) # Flask logger seviyesini ayarla
+app.logger.setLevel(logging.INFO)
 
-# --- Jinja2 Filtreleri ---
+
+# --- Cached Functions ---
+@cache.memoize()
+def cached_get_stock_data(symbol):
+    app.logger.info(f"CACHE MISS or expired for get_stock_data({symbol}). Calling API.")
+    return newsapi.get_stock_data(symbol)
+
+@cache.memoize()
+def cached_get_news(symbol):
+    app.logger.info(f"CACHE MISS or expired for get_news({symbol}). Calling API.")
+    return newsapi.get_news(symbol, lang='en') # Fetch English news
+
+# --- Jinja2 Filters ---
 @app.template_filter('calculate_average')
 def calculate_average(values):
     if not values: return 'N/A'
     try:
         valid_values = [float(v) for v in values if v is not None and isinstance(v, (int, float))]
         if not valid_values: return 'N/A'
-        return '{:,.0f}'.format(sum(valid_values) / len(valid_values))
-    except (ValueError, TypeError): return 'N/A'
+        avg = sum(valid_values) / len(valid_values)
+        if abs(avg) >= 1e9: return f"{avg / 1e9:.1f}B"
+        if abs(avg) >= 1e6: return f"{avg / 1e6:.1f}M"
+        if abs(avg) >= 1e3: return f"{avg / 1e3:,.0f}K"
+        return f"{avg:,.0f}"
+    except (ValueError, TypeError, ZeroDivisionError): return 'N/A'
 
 @app.template_filter('safe_sum')
 def safe_sum(values):
      if not values: return 0
-     try:
-         valid_values = [float(v) for v in values if v is not None and isinstance(v, (int, float))]
-         return sum(valid_values)
+     try: valid_values = [float(v) for v in values if v is not None and isinstance(v, (int, float))]; return sum(valid_values)
      except (ValueError, TypeError): return 0
 
 @app.template_filter('variance')
 def calculate_variance(values):
     if not values: return None
-    try:
-        valid_values = [float(v) for v in values if v is not None and isinstance(v, (int, float))]
-        if len(valid_values) < 2: return None
-        return np.var(valid_values)
+    try: valid_values = [float(v) for v in values if v is not None and isinstance(v, (int, float))]; return np.var(valid_values) if len(valid_values) >= 2 else None
     except (ValueError, TypeError): return None
 
 @app.template_filter('format_number')
 def format_number(value, decimals=2):
     if value is None or not isinstance(value, (int, float)): return 'N/A'
-    try:
-        format_string = '{:,.%df}' % decimals
-        return format_string.format(value)
-    except (ValueError, TypeError): return str(value)
+    try: format_string = '{:,.%df}' % decimals; return format_string.format(value)
+    except (ValueError, TypeError): return 'N/A'
 
 @app.template_filter('format_date')
-def format_date(value, format_str='%d.%m.%Y'):
+def format_date(value, format_str='%d %b %Y'):
     if not value: return ''
     try:
         dt_obj = None
-        if isinstance(value, datetime):
-            dt_obj = value
+        if isinstance(value, datetime): dt_obj = value
         elif isinstance(value, str):
-            try: # ISO formatını veya sadece tarihi dene
-                if 'T' in value or ' ' in value: # Saat bilgisi varsa
-                    dt_obj = pd.to_datetime(value).to_pydatetime()
-                else: # Sadece tarihse
-                     dt_obj = datetime.strptime(value, '%Y-%m-%d')
-            except ValueError:
-                 app.logger.warning(f"Tarih formatlama: Anlaşılamayan string formatı: {value}")
-                 return value # Anlaşılamıyorsa orijinal string kalsın
-        else:
-             app.logger.warning(f"Tarih formatlama: Desteklenmeyen tip: {type(value)} - Değer: {value}")
-             return str(value)
+            try: dt_obj = pd.to_datetime(value, errors='raise').to_pydatetime()
+            except ValueError: app.logger.debug(f"format_date: Could not parse date string '{value}'"); return value
+        else: app.logger.warning(f"format_date: Unsupported type: {type(value)}"); return str(value)
+        if dt_obj.tzinfo is None: dt_obj = pytz.utc.localize(dt_obj)
+        else: dt_obj = dt_obj.astimezone(pytz.utc)
+        return dt_obj.strftime(format_str)
+    except Exception as e: app.logger.error(f"Error formatting date '{value}': {e}", exc_info=False); return str(value)
 
-        # Eğer timezone bilgisi varsa, yerel saate çevirip formatlayalım (veya UTC?)
-        # Şimdilik UTC varsayıp timezone'u kaldıralım
-        if dt_obj and dt_obj.tzinfo:
-             dt_obj = dt_obj.astimezone(pytz.utc).replace(tzinfo=None)
-
-        return dt_obj.strftime(format_str) if dt_obj else str(value)
-
-    except Exception as e:
-        app.logger.error(f"Tarih formatlama hatası: {e} - Değer: {value}", exc_info=True)
-        return str(value)
-
-# Jinja environment'a filtreleri ve global fonksiyonları ekle
+# Register filters and globals
 app.jinja_env.filters['calculate_average'] = calculate_average
 app.jinja_env.filters['safe_sum'] = safe_sum
 app.jinja_env.filters['variance'] = calculate_variance
 app.jinja_env.filters['format_number'] = format_number
 app.jinja_env.filters['format_date'] = format_date
-# Base64 encode filtresi (JSON'u JS'e güvenli aktarmak için - artık kullanılmıyor)
-# app.jinja_env.filters['b64encode'] = lambda s: base64.b64encode(s.encode()).decode()
-app.jinja_env.globals.update(abs=abs)
-app.jinja_env.globals.update(len=len)
-app.jinja_env.globals.update(now=datetime.utcnow) # Template'de güncel UTC zamanı için
+app.jinja_env.globals.update(abs=abs, len=len, now=lambda: datetime.utcnow().replace(tzinfo=pytz.utc), isinstance=isinstance, float=float, int=int, str=str, list=list, dict=dict, datetime=datetime, max=max, min=min, round=round)
 
-
-# --- Routes ---
-
+# --- Main Route ---
 @app.route('/', methods=['GET', 'POST'])
 def index():
-    stock_symbol = None
+    stock_symbol = session.get('last_symbol', None)
     stock_data = None
     articles = []
-    decision_result = "Veri Yok"
-    stock_data_json = '{}' # JS için başlangıç değeri
+    tech_indicators = {} # Initialize empty
+    avg_sentiment = 0.0 # Initialize default sentiment
+    decision_result = "Analysis Pending" # Default status
     error_occurred = False
     error_message = None
-    # Volatilite ve teknik gösterge sonuçları için değişkenler
-    volatility_metric = None
-    sma_status = None
-    rsi_status = None
 
-
+    # --- Handle POST request (Search) ---
     if request.method == 'POST':
-        stock_symbol = request.form.get('stock', '').strip().upper()
-        if not stock_symbol:
-            flash('Lütfen geçerli bir hisse senedi sembolü girin.', 'warning')
+        stock_symbol_form = request.form.get('stock', '').strip().upper()
+        if not stock_symbol_form:
+            flash('Please enter a valid stock symbol.', 'warning')
             return redirect(url_for('index'))
         else:
-            app.logger.info(f"POST request for symbol: {stock_symbol}. Redirecting to GET.")
-            return redirect(url_for('index', stock=stock_symbol))
+            session['last_symbol'] = stock_symbol_form
+            app.logger.info(f"POST request for {stock_symbol_form}. Redirecting to GET after clearing cache.")
+            # Clear relevant caches
+            cache_key_data = f"cached_get_stock_data_{stock_symbol_form}"
+            cache_key_news = f"cached_get_news_{stock_symbol_form}"
+            cache_key_forecast = f"forecast_{stock_symbol_form}"
+            cache.delete(cache_key_data)
+            cache.delete(cache_key_news)
+            cache.delete(cache_key_forecast)
+            return redirect(url_for('index', stock=stock_symbol_form))
 
-    # GET isteği veya yönlendirme sonrası
-    stock_symbol = request.args.get('stock', '').strip().upper()
-
-    if not stock_symbol:
-        return render_template('index.html', stock=None) # Hoşgeldin ekranı
+    # --- Process GET request ---
+    stock_symbol_arg = request.args.get('stock')
+    if stock_symbol_arg:
+        stock_symbol = stock_symbol_arg.strip().upper()
+        session['last_symbol'] = stock_symbol
+    elif not stock_symbol:
+        return render_template('index.html', stock=None) # Show welcome screen
 
     app.logger.info(f"Processing GET request for symbol: {stock_symbol}")
+
+    # --- Main Data Fetching and Processing Block ---
     try:
-        # Hisse senedi verilerini çek
-        stock_data = newsapi.get_stock_data(stock_symbol)
-
+        # 1. Get Stock Data
+        stock_data = cached_get_stock_data(stock_symbol)
         if stock_data.get('error'):
-            error_occurred = True
-            error_message = stock_data['error']
-            app.logger.error(f"Error fetching stock data for {stock_symbol}: {error_message}")
-            flash(error_message, 'danger')
-            stock_data = None # Hata varsa template için None yap
-        elif not stock_data or not stock_data.get('labels'):
-             error_occurred = True
-             error_message = f"{stock_symbol} için hisse senedi verisi alınamadı (boş veya eksik veri)."
-             app.logger.error(error_message)
-             flash(error_message, 'danger')
-             stock_data = None
-        else:
-             # Veri başarıyla alındı
-             stock_data_json = json.dumps(stock_data)
+            raise ValueError(stock_data['error']) # Raise error to be caught below
+        if not stock_data or not stock_data.get('labels') or not stock_data.get('values'):
+             raise ValueError(f"Stock data for '{stock_symbol}' is missing or incomplete.")
 
-             # Teknik Göstergeleri ve Volatiliteyi burada hesaplayalım (opsiyonel)
-             # Bu, Jinja içindeki karmaşık hesaplamaları önler.
-             try:
-                 values = [v for v in stock_data.get('values', []) if v is not None] # None olmayanları al
-                 if len(values) >= 2:
-                    returns = pd.Series(values).pct_change().dropna()
-                    if len(returns) >= 2: # Varyans için en az 2 return lazım
-                        # Yıllık volatilite
-                        volatility_metric = returns.std() * np.sqrt(252) # 252 işlem günü
+        # 2. Calculate Technical Indicators (if stock_data is valid)
+        try:
+            df = pd.DataFrame({
+                'Open': stock_data.get('open_values'), 'High': stock_data.get('high_values'),
+                'Low': stock_data.get('low_values'), 'Close': stock_data.get('values'),
+                'Volume': stock_data.get('volume_values')
+            }, index=pd.to_datetime(stock_data.get('labels'), format='ISO8601', errors='coerce'))
+            df = df[pd.notna(df.index)]
+            df.dropna(subset=['Close'], inplace=True)
 
-                 sma_period = 20
-                 if len(values) >= sma_period:
-                     sma_20 = np.mean(values[-sma_period:])
-                     current_price = values[-1]
-                     if current_price > sma_20: sma_status = 'Üzerinde'
-                     elif current_price < sma_20: sma_status = 'Altında'
-                     else: sma_status = 'Eşit'
+            if not df.empty:
+                app.logger.info(f"Calculating TA indicators for {stock_symbol} with {len(df)} data points.")
+                min_rows_for_full_ta = 20
+                # Calculate Volatility
+                if len(df) >= 2:
+                    df['returns'] = df['Close'].pct_change()
+                    std_dev = df['returns'].std()
+                    tech_indicators['volatility'] = std_dev * np.sqrt(252) if pd.notna(std_dev) else None
+                # Calculate other indicators
+                if len(df) >= min_rows_for_full_ta:
+                    df.ta.sma(length=20, append=True); df.ta.rsi(length=14, append=True)
+                    df.ta.macd(fast=12, slow=26, signal=9, append=True); df.ta.bbands(length=20, std=2, append=True)
+                    last = df.iloc[-1]
+                    cp = last.get('Close'); sma20 = last.get('SMA_20'); rsi14 = last.get('RSI_14')
+                    macd = last.get('MACD_12_26_9'); macds = last.get('MACDs_12_26_9'); macdh = last.get('MACDh_12_26_9')
+                    bbl = last.get('BBL_20_2.0'); bbu = last.get('BBU_20_2.0'); bbm = last.get('BBM_20_2.0')
+                    if pd.notna(cp) and pd.notna(sma20): tech_indicators['sma'] = 'Above' if cp > sma20 else ('Below' if cp < sma20 else 'Equal')
+                    if pd.notna(rsi14): tech_indicators['rsi'] = 'Overbought' if rsi14 > 70 else ('Oversold' if rsi14 < 30 else 'Neutral')
+                    if pd.notna(macd) and pd.notna(macds): tech_indicators['macd'] = 'Buy Signal (Positive)' if macd > macds else 'Sell Signal (Negative)'
+                    if pd.notna(macdh): tech_indicators['macd_hist'] = float(round(macdh, 3))
+                    if pd.notna(cp) and pd.notna(bbl) and pd.notna(bbu):
+                        if cp < bbl: tech_indicators['bbands'] = 'Below Lower Band'
+                        elif cp > bbu: tech_indicators['bbands'] = 'Above Upper Band'
+                        else: tech_indicators['bbands'] = 'Inside Bands'
+                    if pd.notna(bbm): tech_indicators['bbands_mid'] = float(round(bbm, 2))
+                else: app.logger.warning(f"Insufficient data ({len(df)} rows) for full TA for {stock_symbol}"); flash(f"Limited data available for {stock_symbol}, some indicators might be missing.", 'info')
+            else: app.logger.warning(f"DataFrame empty after cleaning for {stock_symbol}. Skipping TA.")
 
-                 rsi_period = 14
-                 if len(values) >= rsi_period + 1:
-                     delta = pd.Series(values).diff()
-                     gain = delta.where(delta > 0, 0.0)
-                     loss = -delta.where(delta < 0, 0.0)
-                     # EWMA (Exponential Weighted Moving Average) kullanmak daha standarttır
-                     avg_gain = gain.ewm(com=rsi_period - 1, min_periods=rsi_period).mean()
-                     avg_loss = loss.ewm(com=rsi_period - 1, min_periods=rsi_period).mean()
-                     rs = avg_gain.iloc[-1] / avg_loss.iloc[-1] if avg_loss.iloc[-1] != 0 else np.inf
-                     rsi = 100 - (100 / (1 + rs))
-                     if rsi > 70: rsi_status = 'Aşırı Alım'
-                     elif rsi < 30: rsi_status = 'Aşırı Satım'
-                     else: rsi_status = 'Nötr'
+        except Exception as ta_error:
+            app.logger.error(f"Error calculating technical indicators for {stock_symbol}: {ta_error}", exc_info=True)
+            flash(f"Warning: Could not calculate technical indicators for {stock_symbol}.", 'warning')
+            tech_indicators = {} # Ensure it's empty on error
 
-             except Exception as calc_err:
-                 app.logger.warning(f"Error calculating metrics for {stock_symbol}: {calc_err}")
+        # 3. Get News
+        articles = cached_get_news(stock_symbol)
+        if isinstance(articles, dict) and articles.get('error'):
+            flash(f"Could not fetch news for {stock_symbol}: {articles['error']}", 'warning')
+            articles = []
+        elif not isinstance(articles, list):
+            flash(f"Received unexpected news format for {stock_symbol}.", 'warning')
+            articles = []
 
-
-        # Haberleri çek ve duygu analizi yap (Hata olsa bile devam et)
-        app.logger.info(f"Fetching news for {stock_symbol}")
-        articles = newsapi.get_news(stock_symbol)
-        if not articles:
-            app.logger.warning(f"No news found for {stock_symbol}")
-            # flash(f"{stock_symbol} için güncel haber bulunamadı.", 'info') # Çok sık çıkabilir, kapatalım
-
-        # Karar mekanizmasını çalıştır
+        # 4. Calculate Average Sentiment (if news available)
+        sentiment_calculated = False
         if articles:
-             app.logger.info(f"Getting decision based on {len(articles)} articles for {stock_symbol}")
-             decision_result = decision.get_decision(articles)
-        else:
-             decision_result = "Veri Yok"
+            try:
+                avg_sentiment = sentiment.analyze_articles_sentiment(articles)
+                sentiment_calculated = True
+                app.logger.info(f"Average sentiment calculated for {stock_symbol}: {avg_sentiment:.4f}")
+            except Exception as sent_err:
+                 app.logger.error(f"Error calculating sentiment for {stock_symbol}: {sent_err}", exc_info=True)
+                 flash("Error during sentiment analysis.", "warning")
+                 # avg_sentiment remains 0.0
+
+        # 5. Make Decision (using combined indicators and sentiment)
+        # *** This now calls the combined decision function ***
+        try:
+            # Pass the calculated indicators and sentiment score
+            decision_result = decision.make_decision_with_indicators(tech_indicators, avg_sentiment)
+            app.logger.info(f"Combined decision for {stock_symbol}: {decision_result}")
+        except Exception as dec_err:
+            decision_result = "Decision Error"
+            app.logger.error(f"Error in combined decision logic for {stock_symbol}: {dec_err}", exc_info=True)
+            flash("Error during decision analysis.", "warning")
+
+    # --- Handle Errors from Main Block ---
+    except ValueError as ve: # Catch errors raised from data fetching/validation
+        error_occurred = True
+        error_message = str(ve)
+        app.logger.error(f"Data fetching/validation error for {stock_symbol}: {error_message}")
+        flash(error_message, 'danger')
+        stock_data = None; articles = []; tech_indicators = {}; decision_result = "Error"
+    except Exception as e: # Catch all other unexpected errors
+        error_occurred = True
+        error_message = f"An unexpected server error occurred while processing the request for {stock_symbol}."
+        app.logger.error(f"Unexpected error in index route for {stock_symbol}: {type(e).__name__} - {str(e)}", exc_info=True)
+        if isinstance(e, jinja2.exceptions.TemplateError):
+            error_message = f"Error rendering the page template for {stock_symbol}."
+            app.logger.error(f"Jinja Template Error: {e.message} (Template: {getattr(e, 'filename', 'N/A')}, Line: {getattr(e, 'lineno', 'N/A')})")
+        flash(error_message, 'danger')
+        stock_data = None; articles = []; tech_indicators = {}; decision_result = "Error"
 
 
-        # Template'e verileri gönder
-        return render_template('index.html',
-                               stock=stock_symbol,
-                               stock_data=stock_data,
-                               articles=articles,
-                               decision=decision_result,
-                               stock_data_json=stock_data_json,
-                               error=error_occurred,
-                               error_message=error_message,
-                               # Hesaplanan metrikleri de gönder
-                               volatility_metric=volatility_metric,
-                               sma_status=sma_status,
-                               rsi_status=rsi_status
-                               )
+    # --- Prepare Context and Render ---
+    context = {
+        'stock': stock_symbol,
+        'stock_data': stock_data, # Will be None if error occurred
+        'articles': articles,
+        'error': error_occurred,
+        'error_message': error_message,
+        'decision': decision_result, # The result from the combined function or error status
+        'tech_indicators': tech_indicators, # Pass calculated indicators
+        'now': datetime.utcnow().replace(tzinfo=pytz.utc)
+    }
+    return render_template('index.html', **context)
 
-    except Exception as e:
-        app.logger.error(f"Genel hata (route '/') işlenirken {stock_symbol}: {str(e)}", exc_info=True)
-        flash(f'Beklenmedik bir sunucu hatası oluştu: {str(e)}', 'danger')
-        return render_template('index.html', stock=stock_symbol, error=True, error_message=f'Beklenmedik bir sunucu hatası: {str(e)}')
 
+# --- AJAX / Data Endpoints ---
 
 @app.route('/refresh_stock')
 def refresh_stock():
-    """
-    AJAX ile çağrılacak endpoint. Sadece hisse verilerini yeniler.
-    """
+    """ Endpoint called via AJAX. Refreshes stock data, bypassing the cache. """
     stock = request.args.get("stock")
-    if not stock:
-        return jsonify({"status": "error", "message": "Stock sembolü gerekli"}), 400
-
-    app.logger.info(f"AJAX request to refresh stock data for: {stock}")
+    if not stock: return jsonify({"status": "error", "message": "Stock symbol is required"}), 400
+    app.logger.info(f"AJAX request to REFRESH stock data for: {stock}")
     try:
-        stock_data = newsapi.get_stock_data(stock)
-
+        stock_data = newsapi.get_stock_data(stock) # Fetch fresh data
         if stock_data.get('error'):
-            app.logger.error(f"Error refreshing stock data for {stock}: {stock_data['error']}")
-            # Hata kodunu belirlemeye çalışalım
-            status_code = 500
-            if "bulunamadı" in stock_data['error'].lower() or "geçersiz" in stock_data['error'].lower():
-                 status_code = 404
-            elif "rate limit" in stock_data['error'].lower():
-                 status_code = 429
-            return jsonify({
-                "status": "error",
-                "message": stock_data['error']
-            }), status_code
+            error_msg = stock_data['error']; status_code = 500
+            if "not found" in error_msg.lower() or "invalid" in error_msg.lower(): status_code = 404
+            elif "rate limit" in error_msg.lower(): status_code = 429
+            return jsonify({"status": "error", "message": error_msg}), status_code
         elif not stock_data or not stock_data.get('labels'):
-             app.logger.warning(f"No stock data returned after refresh for {stock}")
-             return jsonify({
-                 "status": "error",
-                 "message": f"{stock} için veri yenilenemedi (boş veri)."
-             }), 404
+             return jsonify({"status": "error", "message": f"Refreshed data for {stock} is incomplete."}), 404
         else:
-             app.logger.info(f"Successfully refreshed stock data for {stock}")
-             # Başarı durumunda sadece gerekli verileri döndür (JS'in ihtiyaç duyduğu)
-             response_data = {
-                 'current_price': stock_data.get('current_price'),
-                 'change_percent': stock_data.get('change_percent'),
-                 'market_status': stock_data.get('market_status'),
-                 'labels': stock_data.get('labels'),
-                 'values': stock_data.get('values'),
-                 'volume_values': stock_data.get('volume_values'),
-                 'candlestick_data': stock_data.get('candlestick_data'),
-                 'timestamp': stock_data.get('timestamp'),
-                 'company_name': stock_data.get('company_name'), # JS tarafında gerekebilir
-                 # Diğerleri (open, high, low) gerekirse eklenebilir
-             }
-             return jsonify({
-                 "status": "success",
-                 "stock_data": response_data
-             })
-
+             cache_key = f"cached_get_stock_data_{stock}"; cache.set(cache_key, stock_data) # Update cache
+             app.logger.info(f"Cache updated for {stock} after refresh.")
+             return jsonify({"status": "success", "stock_data": stock_data }) # Return fresh data
     except Exception as e:
-        app.logger.error(f"Hisse yenileme sırasında sunucu hatası ({stock}): {str(e)}", exc_info=True)
-        return jsonify({
-            "status": "error",
-            "message": "Veri yenilenirken sunucu hatası oluştu."
-        }), 500
-
+        app.logger.error(f"Server error during stock refresh ({stock}): {str(e)}", exc_info=True)
+        return jsonify({"status": "error", "message": "Server error while refreshing stock data."}), 500
 
 @app.route('/get_forecast_data', methods=['GET'])
 def get_forecast_data():
-    """
-    AJAX ile çağrılacak endpoint. Prophet tahmin verilerini döndürür.
-    """
+    """ Endpoint called via AJAX. Returns Prophet forecast data. (Uses cache) """
     symbol = request.args.get('symbol')
-    if not symbol:
-        return jsonify({'error': 'Hisse senedi sembolü gerekli.'}), 400
-
-    app.logger.info(f"AJAX request for forecast data: {symbol}")
-
+    if not symbol: return jsonify({'error': 'Stock symbol is required.'}), 400
+    cache_key = f"forecast_{symbol}"
+    cached_result = cache.get(cache_key)
+    if cached_result: app.logger.info(f"Returning cached forecast data for {symbol}"); return jsonify(cached_result)
+    app.logger.info(f"CACHE MISS for forecast data: {symbol}. Generating forecast...")
     try:
-        # forecasting modülündeki fonksiyonu çağır
-        forecast_result = forecasting.get_prophet_forecast(symbol, periods=30) # 30 günlük tahmin
-
-        if forecast_result is None:
-             app.logger.error(f"Forecast function returned None for {symbol}")
-             return jsonify({'error': f'{symbol} için tahmin hesaplanırken bilinmeyen bir hata oluştu.'}), 500
-        elif forecast_result.get('error'):
-            error_msg = forecast_result['error']
-            app.logger.error(f"Error generating forecast for {symbol}: {error_msg}")
-            # Hata mesajına göre uygun HTTP kodu döndür
-            status_code = 500 # Varsayılan sunucu hatası
-            if "bulunamadı" in error_msg.lower() or "yeterli veri yok" in error_msg.lower():
-                status_code = 404
-            elif "rate limit" in error_msg.lower():
-                 status_code = 429
+        forecast_result = forecasting.get_prophet_forecast(symbol, periods=30)
+        if forecast_result is None: raise Exception("Forecast function returned None")
+        if forecast_result.get('error'):
+            error_msg = forecast_result['error']; status_code = 500
+            if "veri bulunamadı" in error_msg.lower() or "insufficient" in error_msg.lower() or "not found" in error_msg.lower(): status_code = 404
+            elif "rate limit" in error_msg.lower(): status_code = 429
             return jsonify({'error': error_msg}), status_code
         else:
-            app.logger.info(f"Successfully generated forecast for {symbol}")
-            return jsonify(forecast_result) # Başarılı sonucu JSON olarak döndür
-
+            forecast_result['timestamp'] = datetime.now(pytz.utc).strftime('%Y-%m-%dT%H:%M:%S.000Z')
+            cache.set(cache_key, forecast_result, timeout=3600) # Cache for 1 hour
+            app.logger.info(f"Successfully generated forecast for {symbol}.")
+            return jsonify(forecast_result)
     except Exception as e:
-        app.logger.error(f"Tahmin endpoint (/get_forecast_data) hatası ({symbol}): {str(e)}", exc_info=True)
-        return jsonify({'error': f'Tahmin hesaplanırken genel sunucu hatası oluştu.'}), 500
+        app.logger.error(f"Forecast endpoint error ({symbol}): {str(e)}", exc_info=True)
+        return jsonify({'error': f"Server error while generating forecast for {symbol}."}), 500
+
+# --- Added Cache Clearing Endpoint ---
+@app.route('/clear_cache')
+def clear_cache_key():
+    """ Clears a specific cache key. Used by JS refresh buttons. """
+    key = request.args.get('key')
+    if key:
+        try:
+            # Construct potential prefixed key (if Flask-Caching uses one)
+            prefix = cache.config.get('CACHE_KEY_PREFIX', '')
+            full_key_guess = prefix + key
+            deleted1 = cache.delete(key) # Try deleting raw key
+            deleted2 = cache.delete(full_key_guess) # Try deleting prefixed key
+
+            if deleted1 or deleted2:
+                app.logger.info(f"Cache key '{key}' (or prefixed version) deleted via API request.")
+                return jsonify({"status": "success", "message": f"Cache key '{key}' cleared."}), 200
+            else:
+                app.logger.warning(f"Cache key '{key}' (or prefixed version) not found for deletion.")
+                return jsonify({"status": "warning", "message": f"Cache key '{key}' not found."}), 404
+        except Exception as e:
+            app.logger.error(f"Error deleting cache key '{key}': {e}", exc_info=True)
+            return jsonify({"status": "error", "message": "Error clearing cache key."}), 500
+    else:
+        return jsonify({"status": "error", "message": "No cache key provided."}), 400
 
 
-# Ana Çalıştırma Bloğu
+# --- Main Execution Block ---
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5001))
-    # debug=True geliştirme için, production'da False yapın.
-    # use_reloader=False rate limiting hatalarını ve çift başlatmayı önler.
-    # host='0.0.0.0' ağdan erişim için.
-    app.logger.info(f"Starting Flask app on host 0.0.0.0 port {port} with debug=True, use_reloader=False")
-    app.run(debug=True, use_reloader=False, host='0.0.0.0', port=port)
+    import argparse
+    parser = argparse.ArgumentParser(description='Financial Analysis Dashboard')
+    parser.add_argument('--port', type=int, default=5001, help='Port to run the Flask app on')
+    parser.add_argument('--host', type=str, default='0.0.0.0', help='Host (0.0.0.0 for external access)')
+    args = parser.parse_args()
+    app.logger.info(f"Starting Flask app on host {args.host} port {args.port} with debug=True, use_reloader=False")
+    app.run(host=args.host, port=args.port, debug=True, use_reloader=False)

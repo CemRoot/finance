@@ -1,73 +1,86 @@
 {# templates/tabs/forecast.html #}
-{% if stock %} {# Tahmin için sadece hisse sembolü yeterli, JS tarafı veriyi çekecek #}
-<div class="row mb-4">
+
+{# Check if a stock symbol is selected. The content is loaded via JS. #}
+{% if stock %}
+<div class="row g-4">
+
+    <!-- Forecast Chart Section -->
     <div class="col-12">
-        <div class="card shadow-sm border-0">
-            <div class="card-header bg-light border-0">
-                <h5 class="card-title mb-0 fs-6">Fiyat Tahmini (Prophet Modeli)</h5>
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-header bg-light border-0 pb-0 d-flex justify-content-between align-items-center">
+                 <h5 class="card-title mb-0 fs-6 text-dark">Price Forecast (Next 30 Days - Prophet)</h5>
+                 {# Optional: Add a refresh button for the forecast itself #}
+                 <button id="refreshForecastBtn" class="btn btn-sm btn-outline-secondary py-0 px-1" title="Refresh Forecast">
+                     <i class="fas fa-sync"></i> <span class="d-none d-sm-inline ms-1">Refresh</span> {# Show text on larger screens #}
+                 </button>
             </div>
-            <div class="card-body">
-                <div id="forecastContent">
-                    {# Yükleniyor/Hata durumu forecast.js tarafından yönetilecek #}
-                    <div class="row">
-                        <div class="col-lg-8 mb-4 mb-lg-0">
-                            <div id="forecastChartContainer" style="min-height: 400px; position: relative;"> {# Yükseklik ayarlandı #}
-                                <div id="forecastChart" style="height: 100%; width: 100%;">
-                                    {# Başlangıçta yükleniyor göstergesi (forecast.js'den) #}
-                                     <div class="d-flex justify-content-center align-items-center h-100 text-muted">
-                                        <div class="spinner-border spinner-border-sm me-2" role="status">
-                                            <span class="visually-hidden">Yükleniyor...</span>
-                                        </div>
-                                        Tahmin grafiği yükleniyor...
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-lg-4">
-                            <div class="metrics-container bg-light p-3 rounded"> {# Arkaplan eklendi #}
-                                <h6 class="mb-3 text-uppercase small text-muted">Tahmin Metrikleri</h6>
-                                <div class="metric-item d-flex justify-content-between mb-2">
-                                    <span class="metric-label small">Trend Yönü:</span>
-                                    <span id="trendDirection" class="metric-value fw-medium">--</span>
-                                </div>
-                                <div class="metric-item d-flex justify-content-between mb-2">
-                                    <span class="metric-label small">Trend Gücü:</span>
-                                    <span id="trendStrength" class="metric-value fw-medium">--</span>
-                                </div>
-                                <div class="metric-item d-flex justify-content-between mb-2">
-                                    <span class="metric-label small">Volatilite:</span>
-                                    <span id="historicalVolatility" class="metric-value fw-medium">--</span>
-                                </div>
-                                <div class="metric-item d-flex justify-content-between mb-2">
-                                    <span class="metric-label small">Mevsimsellik:</span>
-                                    <span id="seasonalityStrength" class="metric-value fw-medium">--</span>
-                                </div>
-                                <div class="metric-item d-flex justify-content-between mb-2">
-                                    <span class="metric-label small">Güven Aralığı:</span>
-                                    <span id="confidenceInterval" class="metric-value fw-medium">--</span>
-                                </div>
-
-                                <hr class="my-3">
-
-                                <div class="forecast-summary">
-                                    <h6 class="mb-2 text-uppercase small text-muted">Özet</h6>
-                                    <p id="forecastSummary" class="small text-muted fst-italic">Tahmin özeti oluşturuluyor...</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <p class="text-muted small mt-3 fst-italic border-top pt-2">
-                        * Tahminler Prophet modeli kullanılarak geçmiş verilere dayanarak oluşturulmuştur ve yalnızca bilgilendirme amaçlıdır, yatırım tavsiyesi niteliği taşımaz. Piyasa koşulları ve beklenmedik olaylar sonuçları etkileyebilir.
-                    </p>
+            <div class="card-body d-flex flex-column pt-2 pb-3"> {# Added bottom padding #}
+                {# Container for the Plotly chart - JS will target this #}
+                <div id="forecastChartContainer" class="chart-container forecast-chart-container mb-2" style="min-height: 350px;"> {# Use a wrapper div for Plotly #}
+                    {# Canvas is often used for Chart.js, Plotly usually targets a div directly #}
+                    {# Let's use a div for Plotly compatibility #}
+                    <div id="forecastChart"></div>
                 </div>
+                 {# Placeholder for status/loading messages managed by JS #}
+                 <div id="forecastStatus" class="text-center text-muted small mt-2">Initializing forecast...</div>
             </div>
         </div>
     </div>
-</div>
-{# Tahmin scriptleri base.html'de ve index.html'in script bloğunda yükleniyor #}
-{% else %}
-    <div class="alert alert-light text-center mt-4">
-        <i class="fas fa-wand-magic-sparkles fa-2x text-muted mb-3"></i><br>
-        Tahminleri görmek için lütfen bir hisse senedi seçin.
+
+    <!-- Forecast Metrics Section -->
+    <div class="col-md-6 mt-4">
+        <div class="card shadow-sm border-0 h-100">
+            <div class="card-header bg-light border-0 pb-0">
+                <h5 class="card-title mb-0 fs-6 text-dark">Forecast Analysis</h5>
+            </div>
+            <div class="card-body pt-2 metrics-container"> {# Added metrics-container class #}
+                 {# Metrics will be populated by forecast.js #}
+                 <div class="metric d-flex justify-content-between border-bottom pb-1 mb-2">
+                    <span class="metric-label small text-muted">Trend Direction</span>
+                    <span id="trendDirection" class="metric-value fw-medium">Loading...</span>
+                </div>
+                 <div class="metric d-flex justify-content-between border-bottom pb-1 mb-2">
+                    <span class="metric-label small text-muted">Trend Strength</span>
+                    <span id="trendStrength" class="metric-value fw-medium">Loading...</span>
+                </div>
+                 <div class="metric d-flex justify-content-between border-bottom pb-1 mb-2">
+                    <span class="metric-label small text-muted">Seasonality Strength</span>
+                    <span id="seasonalityStrength" class="metric-value fw-medium">Loading...</span>
+                 </div>
+                  <div class="metric d-flex justify-content-between border-bottom pb-1 mb-2">
+                    <span class="metric-label small text-muted">Historical Volatility (Ann.)</span>
+                    <span id="historicalVolatility" class="metric-value fw-medium">Loading...</span>
+                 </div>
+                 <div class="metric d-flex justify-content-between pb-1 mb-2">
+                    <span class="metric-label small text-muted">Confidence Interval (Relative)</span>
+                    <span id="confidenceInterval" class="metric-value fw-medium">Loading...</span>
+                 </div>
+            </div>
+        </div>
     </div>
-{% endif %} {# if stock sonu #}
+
+    <!-- Forecast Summary Section -->
+    <div class="col-md-6 mt-4">
+         <div class="card shadow-sm border-0 h-100">
+             <div class="card-header bg-light border-0 pb-0">
+                 <h5 class="card-title mb-0 fs-6 text-dark">Forecast Summary</h5>
+             </div>
+             <div class="card-body pt-2 forecast-summary"> {# Added forecast-summary class #}
+                 {# Summary text will be populated by forecast.js #}
+                 <p id="forecastSummary" class="text-muted small">Generating summary...</p>
+             </div>
+         </div>
+    </div>
+
+</div> {# End row #}
+
+{# Pass stock symbol to JavaScript via a data attribute for easy access #}
+<div id="forecast-meta" data-stock-symbol="{{ stock }}" style="display: none;"></div>
+
+{% else %}
+    {# Fallback if no stock symbol is provided (e.g., user navigated directly to tab) #}
+    <div class="alert alert-light text-center mt-4" role="alert">
+        <i class="fas fa-robot fa-2x text-muted mb-3"></i><br>
+        Please select a stock from the sidebar to view forecasts.
+    </div>
+{% endif %}
