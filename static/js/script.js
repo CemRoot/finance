@@ -9,7 +9,6 @@ window.detailVolumeChartInstance = null;
 window.highLowChartInstance = null;
 
 // --- Helper Functions ---
-
 /**
  * Formats a date string or object into a timestamp (milliseconds).
  * Uses Luxon if available, falls back to native Date.
@@ -27,10 +26,9 @@ function formatDate(dateStr) {
             if (typeof luxon !== 'undefined' && luxon.DateTime) {
                 let dt = luxon.DateTime.fromISO(dateStr, { zone: 'utc' });
                 if (dt.isValid) return dt.valueOf();
-                // Add other Luxon formats if needed
-                dt = luxon.DateTime.fromSQL(dateStr);
+                dt = luxon.DateTime.fromSQL(dateStr); // Less common format
                 if (dt.isValid) return dt.valueOf();
-                dt = luxon.DateTime.fromFormat(dateStr, 'yyyy-MM-dd');
+                dt = luxon.DateTime.fromFormat(dateStr, 'yyyy-MM-dd'); // Date only
                 if (dt.isValid) return dt.startOf('day').valueOf();
             }
 
@@ -71,9 +69,8 @@ function parseChartData(labels, values, labelName = 'Value') {
     for (let i = 0; i < labels.length; i++) {
         const timestamp = formatDate(labels[i]);
         let value = (values[i] === null || values[i] === undefined) ? null : parseFloat(values[i]);
-        if (isNaN(value)) { value = null; } // Ensure numeric or null
+        if (isNaN(value)) { value = null; }
 
-        // Add if timestamp is valid (value can be null for line chart gaps)
         if (timestamp !== null) {
             chartData.push({ x: timestamp, y: value });
         } else {
@@ -124,20 +121,19 @@ const commonChartOptions = {
     interaction: { mode: 'index', intersect: false },
     scales: {
         x: {
-            type: 'linear', // Use linear scale for timestamps
+            type: 'linear', // Use linear scale for timestamps by default
             grid: { display: false },
             ticks: {
                 autoSkip: true, maxTicksLimit: 10, color: '#6c757d',
-                // Callback to format timestamps on the axis
-                callback: function (value, index, ticks) {
+                callback: function (value, index, ticks) { // Format linear axis as date
                     try {
                         const dt = typeof luxon !== 'undefined' ? luxon.DateTime.fromMillis(value) : new Date(value);
                         if (typeof luxon !== 'undefined' && dt.isValid) {
                             const format = ticks.length > 15 ? 'dd MMM' : 'dd MMM yy';
                             return dt.toFormat(format);
-                        } else if (!isNaN(dt.getTime())) { // Check if native Date is valid
+                        } else if (!isNaN(dt.getTime())) {
                             return `${dt.getDate()} ${dt.toLocaleString('default', { month: 'short' })}`;
-                        } return value; // Fallback to timestamp
+                        } return value;
                     } catch (e) { console.warn("Error formatting x-axis tick:", e); return value; }
                 }
             }
@@ -146,9 +142,8 @@ const commonChartOptions = {
             beginAtZero: false, grid: { color: 'rgba(200, 200, 200, 0.1)' },
             ticks: {
                 color: '#6c757d', callback: function (value) {
-                    if (typeof value === 'number') {
-                        return value.toLocaleString(undefined, { style: 'currency', currency: window.stockData?.currency || 'USD', minimumFractionDigits: 2 });
-                    } return value;
+                    if (typeof value === 'number') { return value.toLocaleString(undefined, { style: 'currency', currency: window.stockData?.currency || 'USD', minimumFractionDigits: 2 }); }
+                    return value;
                 }
             }
         }
@@ -158,7 +153,7 @@ const commonChartOptions = {
         tooltip: {
             enabled: true, backgroundColor: 'rgba(0, 0, 0, 0.8)', titleColor: '#ffffff', bodyColor: '#ffffff', padding: 10,
             callbacks: {
-                title: function (tooltipItems) {
+                title: function (tooltipItems) { // Format tooltip title as date
                     const firstItem = tooltipItems[0];
                     if (firstItem?.parsed?.x) {
                         try {
@@ -166,10 +161,10 @@ const commonChartOptions = {
                             if (typeof luxon !== 'undefined' && dt.isValid) { return dt.toFormat('DD MMM YYYY HH:mm'); }
                             else if (!isNaN(dt.getTime())) { return dt.toLocaleDateString() + ' ' + dt.toLocaleTimeString(); }
                         } catch (e) { console.warn("Error formatting tooltip title:", e); }
-                        return firstItem.parsed.x; // Fallback
+                        return firstItem.parsed.x;
                     } return '';
                 },
-                label: function (context) {
+                label: function (context) { // Format tooltip body as currency
                     let label = context.dataset.label || '';
                     if (label) { label += ': '; }
                     if (context.parsed?.y !== null && context.parsed?.y !== undefined) {
@@ -185,40 +180,17 @@ const commonChartOptions = {
 
 // --- Chart Creation/Update Functions ---
 
-/**
- * Creates or updates a Chart.js chart instance.
- * @param {string} canvasId - The ID of the canvas element.
- * @param {string} chartInstanceVar - The name of the global variable holding the chart instance (e.g., 'priceChartInstance').
- * @param {object} config - The Chart.js configuration object (type, data, options).
- * @returns {Chart|null} The created/updated Chart instance or null on error.
- */
+/** Creates or updates a Chart.js chart instance. */
 function createOrUpdateChart(canvasId, chartInstanceVar, config) {
-    // Check if Chart.js is loaded
-    if (typeof Chart === 'undefined') {
-        console.error(`createOrUpdateChart: Chart.js library not loaded for '#${canvasId}'.`);
-        const container = document.getElementById(canvasId)?.closest('.chart-container');
-        if (container) container.innerHTML = `<div class="alert alert-warning text-center small p-2 m-0">Chart library failed. Refresh.</div>`;
-        return null;
-    }
-    // Check if Luxon is needed and loaded (only if x-axis is not linear)
-    if (config?.options?.scales?.x?.type !== 'linear' && typeof luxon === 'undefined') {
-        console.error(`createOrUpdateChart: Luxon library needed but not loaded for '#${canvasId}'.`);
-        const container = document.getElementById(canvasId)?.closest('.chart-container');
-        if (container) container.innerHTML = `<div class="alert alert-warning text-center small p-2 m-0">Date library failed. Refresh.</div>`;
-        return null;
-    }
+    if (typeof Chart === 'undefined') { console.error(`createOrUpdateChart: Chart.js not ready for '#${canvasId}'.`); const container = document.getElementById(canvasId)?.closest('.chart-container'); if (container) container.innerHTML = `<div class="alert alert-warning text-center small p-2 m-0">Chart library failed. Refresh.</div>`; return null; }
+    if (config?.options?.scales?.x?.type !== 'linear' && typeof luxon === 'undefined') { console.error(`createOrUpdateChart: Luxon needed but not loaded for '#${canvasId}'.`); const container = document.getElementById(canvasId)?.closest('.chart-container'); if (container) container.innerHTML = `<div class="alert alert-warning text-center small p-2 m-0">Date library failed. Refresh.</div>`; return null; }
 
     const ctx = document.getElementById(canvasId);
     const container = ctx ? ctx.closest('.chart-container') : null;
-    if (!ctx || !container) { console.warn(`Chart element '#${canvasId}' or container missing.`); return null; }
+    if (!ctx || !container) { console.warn(`Chart element '#${canvasId}' missing.`); return null; }
 
-    // Destroy previous instance
-    if (window[chartInstanceVar] && typeof window[chartInstanceVar].destroy === 'function') {
-        try { window[chartInstanceVar].destroy(); } catch (e) { console.warn(`Error destroying '${chartInstanceVar}':`, e); }
-        window[chartInstanceVar] = null;
-    }
+    if (window[chartInstanceVar]?.destroy) { try { window[chartInstanceVar].destroy(); } catch (e) { console.warn(`Error destroying '${chartInstanceVar}':`, e); } window[chartInstanceVar] = null; }
 
-    // Create new chart
     try {
         console.log(`Creating new Chart instance for #${canvasId} with type: ${config.type}`);
         window[chartInstanceVar] = new Chart(ctx.getContext('2d'), config);
@@ -232,76 +204,76 @@ function createOrUpdateChart(canvasId, chartInstanceVar, config) {
     }
 }
 
-/**
- * Creates/updates the main price chart (Candlestick or Line).
- * @param {object} stockData - The stock data object from Flask.
- * @param {string} [chartType='candlestick'] - The type of chart ('candlestick' or 'line').
- */
+/** Creates/updates the main price chart (Candlestick or Line). */
 function createOrUpdatePriceChart(stockData, chartType = 'candlestick') {
     const canvasId = 'priceChart';
-    if (!stockData || typeof stockData !== 'object') { /* ... handle error ... */ console.warn(`PriceChart: Invalid stockData.`); createOrUpdateChart(canvasId, 'priceChartInstance', { type: 'line', data: { datasets: [] }, options: { plugins: { title: { display: true, text: 'No data' } } } }); return; }
+    if (!stockData || typeof stockData !== 'object') { console.warn(`PriceChart: Invalid stockData.`); createOrUpdateChart(canvasId, 'priceChartInstance', { type: 'line', data: { datasets: [] }, options: { plugins: { title: { display: true, text: 'No data' } } } }); return; }
     console.log(`Updating Price Chart (#${canvasId}) with type: ${chartType}`);
 
-    let data, options = JSON.parse(JSON.stringify(commonChartOptions)); // Deep copy options
-    // *** DÜZELTME: Use the passed chartType ***
-    let configType = chartType;
-    // *** DÜZELTME SONU ***
-    options.plugins.title = { display: false }; // No title needed for main chart
+    let data, options = JSON.parse(JSON.stringify(commonChartOptions));
+    let configType = chartType; // Use the passed chartType
+    options.plugins.title = { display: false };
     const currencyCode = stockData.currency || 'USD';
-    // Update currency formatting for this specific chart
     options.scales.y.ticks.callback = function (value) { return typeof value === 'number' ? value.toLocaleString(undefined, { style: 'currency', currency: currencyCode, minimumFractionDigits: 2 }) : value; };
     options.plugins.tooltip.callbacks.label = function (context) { let label = context.dataset.label || ''; if (label) { label += ': '; } if (context.parsed?.y !== null && context.parsed?.y !== undefined) { label += context.parsed.y.toLocaleString(undefined, { style: 'currency', currency: currencyCode, minimumFractionDigits: 2 }); } else { label += 'N/A'; } return label; };
 
     if (configType === 'candlestick') {
-        configType = 'candlestick'; // Correct type for the plugin
+        configType = 'candlestick';
+        // *** Attempt to use 'time' scale for candlestick ***
+        options.scales.x.type = 'time';
+        options.scales.x.time = { unit: 'day', tooltipFormat: 'DD MMM YYYY', displayFormats: { day: 'DD MMM yy' } };
+        delete options.scales.x.ticks.callback; // Remove linear callback
+        console.log("Attempting candlestick with 'time' axis.");
+
         const candleData = parseCandlestickData(stockData.candlestick_data);
         console.log('Price Chart - Candlestick Data (first 5):', JSON.stringify(candleData.slice(0, 5)));
-        if (candleData.length === 0) { console.warn(`PriceChart (#${canvasId}): No valid candlestick data. Falling back to line.`); createOrUpdatePriceChart(stockData, 'line'); return; }
+        if (candleData.length === 0) { console.warn(`PriceChart (#${canvasId}): No candlestick data. Falling back to line.`); createOrUpdatePriceChart(stockData, 'line'); return; } // Fallback
         data = { datasets: [{ label: stockData.company_name || 'Price', data: candleData, color: { up: 'rgba(25, 135, 84, 1)', down: 'rgba(220, 53, 69, 1)', unchanged: 'rgba(108, 117, 125, 1)', }, borderColor: 'rgba(0,0,0,0.5)', borderWidth: 1 }] };
-        options.plugins.legend.display = false; // Hide legend for candlestick
-        // Specific tooltip for candlestick
-        options.plugins.tooltip.callbacks.label = function (context) { const raw = context.raw; if (raw && typeof raw.o === 'number') { const o = raw.o.toLocaleString(undefined, { style: 'currency', currency: currencyCode, minimumFractionDigits: 2 }); const h = raw.h.toLocaleString(undefined, { style: 'currency', currency: currencyCode, minimumFractionDigits: 2 }); const l = raw.l.toLocaleString(undefined, { style: 'currency', currency: currencyCode, minimumFractionDigits: 2 }); const c = raw.c.toLocaleString(undefined, { style: 'currency', currency: currencyCode, minimumFractionDigits: 2 }); return [` Open: ${o}`, ` High: ${h}`, ` Low: ${l}`, ` Close: ${c}`]; } return ''; };
-        console.log("Rendering Candlestick chart.");
+        options.plugins.legend.display = false;
+        options.plugins.tooltip.callbacks.label = function (context) { const raw = context.raw; if (raw?.o !== undefined) { const o = raw.o.toLocaleString(undefined, { style: 'currency', currency: currencyCode, minimumFractionDigits: 2 }); const h = raw.h.toLocaleString(undefined, { style: 'currency', currency: currencyCode, minimumFractionDigits: 2 }); const l = raw.l.toLocaleString(undefined, { style: 'currency', currency: currencyCode, minimumFractionDigits: 2 }); const c = raw.c.toLocaleString(undefined, { style: 'currency', currency: currencyCode, minimumFractionDigits: 2 }); return [` Open: ${o}`, ` High: ${h}`, ` Low: ${l}`, ` Close: ${c}`]; } return ''; };
     } else { // Line chart
         configType = 'line';
+        // Ensure x-axis is linear for line chart
+        options.scales.x.type = 'linear';
+        options.scales.x.ticks.callback = commonChartOptions.scales.x.ticks.callback; // Restore linear callback
+        delete options.scales.x.time; // Remove time config
+
         const lineData = parseChartData(stockData.labels, stockData.values, 'Close Price');
         console.log('Price Chart - Line Data (first 5):', JSON.stringify(lineData.slice(0, 5)));
-        if (lineData.length === 0) { console.warn(`PriceChart (#${canvasId}): No valid line data.`); createOrUpdateChart(canvasId, 'priceChartInstance', { type: 'line', data: { datasets: [] }, options: { plugins: { title: { display: true, text: 'No price data' } } } }); return; }
+        if (lineData.length === 0) { console.warn(`PriceChart (#${canvasId}): No line data.`); createOrUpdateChart(canvasId, 'priceChartInstance', { type: 'line', data: { datasets: [] }, options: { plugins: { title: { display: true, text: 'No price data' } } } }); return; } // Show empty
         data = { datasets: [{ label: 'Close Price', data: lineData, borderColor: '#0d6efd', backgroundColor: 'rgba(13, 110, 253, 0.1)', borderWidth: 1.5, tension: 0.1, pointRadius: 0, fill: true }] };
-        options.plugins.legend.display = true; // Show legend for line
+        options.plugins.legend.display = true;
         console.log("Rendering Line chart.");
     }
     createOrUpdateChart(canvasId, 'priceChartInstance', { type: configType, data: data, options: options });
 }
 
-/**
- * Creates/updates the small volume bar chart in the overview.
- * @param {object} stockData - The stock data object from Flask.
- */
+/** Creates/updates the small volume bar chart. */
 function createOrUpdateVolumeChart(stockData) {
     const canvasId = 'volumeChart';
-    if (!stockData?.labels || !stockData?.volume_values) { /* ... handle error ... */ console.warn(`VolumeChart: Missing data.`); createOrUpdateChart(canvasId, 'volumeChartInstance', { type: 'bar', data: { datasets: [] }, options: { plugins: { title: { display: true, text: 'No volume data' } } } }); return; }
+    if (!stockData?.labels || !stockData?.volume_values) { console.warn(`VolumeChart: Missing data.`); createOrUpdateChart(canvasId, 'volumeChartInstance', { type: 'bar', data: { datasets: [] }, options: { plugins: { title: { display: true, text: 'No volume data' } } } }); return; }
     console.log(`Updating Volume Chart (#${canvasId})`);
     const volumeData = parseChartData(stockData.labels, stockData.volume_values, 'Volume');
     console.log('Volume Chart Data (first 5):', JSON.stringify(volumeData.slice(0, 5)));
-    if (volumeData.length === 0) { /* ... handle error ... */ console.warn(`VolumeChart: No valid data.`); createOrUpdateChart(canvasId, 'volumeChartInstance', { type: 'bar', data: { datasets: [] }, options: { plugins: { title: { display: true, text: 'No volume data' } } } }); return; }
+    if (volumeData.length === 0) { console.warn(`VolumeChart: No valid data.`); createOrUpdateChart(canvasId, 'volumeChartInstance', { type: 'bar', data: { datasets: [] }, options: { plugins: { title: { display: true, text: 'No volume data' } } } }); return; }
     const prices = stockData.values || [];
     const barColors = volumeData.map((dp, i) => { if (i > 0 && prices[i] !== null && prices[i - 1] !== null) { return prices[i] >= prices[i - 1] ? 'rgba(25, 135, 84, 0.6)' : 'rgba(220, 53, 69, 0.6)'; } return 'rgba(108, 117, 125, 0.6)'; });
-    const options = { responsive: true, maintainAspectRatio: false, scales: { x: { type: commonChartOptions.scales.x.type, display: false }, y: { beginAtZero: true, display: false } }, plugins: { legend: { display: false }, tooltip: { enabled: false } } };
+    // Use linear x-axis, hide labels/grid
+    const options = { responsive: true, maintainAspectRatio: false, scales: { x: { type: 'linear', display: false }, y: { beginAtZero: true, display: false } }, plugins: { legend: { display: false }, tooltip: { enabled: false } } };
     createOrUpdateChart(canvasId, 'volumeChartInstance', { type: 'bar', data: { datasets: [{ label: 'Volume', data: volumeData, backgroundColor: barColors, borderWidth: 0 }] }, options: options });
 }
 
 /** Creates/updates the Open/Close line chart. */
 function createOpenCloseChart(stockData) {
     const canvasId = 'openCloseChart';
-    if (!stockData?.labels || !stockData?.open_values || !stockData?.values) { /* ... handle error ... */ console.warn(`OpenCloseChart: Missing data.`); createOrUpdateChart(canvasId, 'openCloseChartInstance', { type: 'line', data: { datasets: [] }, options: { plugins: { title: { display: true, text: 'Data unavailable' } } } }); return; }
+    if (!stockData?.labels || !stockData?.open_values || !stockData?.values) { console.warn(`OpenCloseChart: Missing data.`); createOrUpdateChart(canvasId, 'openCloseChartInstance', { type: 'line', data: { datasets: [] }, options: { plugins: { title: { display: true, text: 'Data unavailable' } } } }); return; }
     console.log(`Creating/Updating Open/Close Chart (#${canvasId})`);
     const openData = parseChartData(stockData.labels, stockData.open_values, 'Open');
     const closeData = parseChartData(stockData.labels, stockData.values, 'Close');
     console.log('Open/Close - Open Data (first 5):', JSON.stringify(openData.slice(0, 5)));
     console.log('Open/Close - Close Data (first 5):', JSON.stringify(closeData.slice(0, 5)));
-    if (openData.length === 0 && closeData.length === 0) { /* ... handle error ... */ console.warn(`OpenCloseChart: No valid data.`); createOrUpdateChart(canvasId, 'openCloseChartInstance', { type: 'line', data: { datasets: [] }, options: { plugins: { title: { display: true, text: 'Data unavailable' } } } }); return; }
-    const options = JSON.parse(JSON.stringify(commonChartOptions));
+    if (openData.length === 0 && closeData.length === 0) { console.warn(`OpenCloseChart: No valid data.`); createOrUpdateChart(canvasId, 'openCloseChartInstance', { type: 'line', data: { datasets: [] }, options: { plugins: { title: { display: true, text: 'Data unavailable' } } } }); return; }
+    const options = JSON.parse(JSON.stringify(commonChartOptions)); // Use common options (linear x-axis)
     const currencyCode = stockData.currency || 'USD';
     options.scales.y.ticks.callback = function (value) { return typeof value === 'number' ? value.toLocaleString(undefined, { style: 'currency', currency: currencyCode, minimumFractionDigits: 2 }) : value; };
     options.plugins.tooltip.callbacks.label = function (context) { let label = context.dataset.label || ''; if (label) { label += ': '; } if (context.parsed?.y !== null && context.parsed?.y !== undefined) { label += context.parsed.y.toLocaleString(undefined, { style: 'currency', currency: currencyCode, minimumFractionDigits: 2 }); } else { label += 'N/A'; } return label; };
@@ -312,31 +284,31 @@ function createOpenCloseChart(stockData) {
 /** Creates/updates the detailed volume bar chart. */
 function createDetailVolumeChart(stockData) {
     const canvasId = 'detailVolumeChart';
-    if (!stockData?.labels || !stockData?.volume_values) { /* ... handle error ... */ console.warn(`DetailVolumeChart: Missing data.`); createOrUpdateChart(canvasId, 'detailVolumeChartInstance', { type: 'bar', data: { datasets: [] }, options: { plugins: { title: { display: true, text: 'Data unavailable' } } } }); return; }
+    if (!stockData?.labels || !stockData?.volume_values) { console.warn(`DetailVolumeChart: Missing data.`); createOrUpdateChart(canvasId, 'detailVolumeChartInstance', { type: 'bar', data: { datasets: [] }, options: { plugins: { title: { display: true, text: 'Data unavailable' } } } }); return; }
     console.log(`Creating/Updating Detail Volume Chart (#${canvasId})`);
     const volumeData = parseChartData(stockData.labels, stockData.volume_values, 'Detail Volume');
     console.log('Detail Volume Data (first 5):', JSON.stringify(volumeData.slice(0, 5)));
-    if (volumeData.length === 0) { /* ... handle error ... */ console.warn(`DetailVolumeChart: No valid data.`); createOrUpdateChart(canvasId, 'detailVolumeChartInstance', { type: 'bar', data: { datasets: [] }, options: { plugins: { title: { display: true, text: 'Data unavailable' } } } }); return; }
+    if (volumeData.length === 0) { console.warn(`DetailVolumeChart: No valid data.`); createOrUpdateChart(canvasId, 'detailVolumeChartInstance', { type: 'bar', data: { datasets: [] }, options: { plugins: { title: { display: true, text: 'Data unavailable' } } } }); return; }
     const prices = stockData.values || [];
     const barColors = volumeData.map((dp, i) => { if (i > 0 && prices[i] !== null && prices[i - 1] !== null) { return prices[i] >= prices[i - 1] ? 'rgba(25, 135, 84, 0.6)' : 'rgba(220, 53, 69, 0.6)'; } return 'rgba(108, 117, 125, 0.6)'; });
-    const options = JSON.parse(JSON.stringify(commonChartOptions));
+    const options = JSON.parse(JSON.stringify(commonChartOptions)); // Use common options (linear x-axis)
     options.scales.y.ticks.callback = function (value) { if (typeof value === 'number') { if (value >= 1e9) return (value / 1e9).toFixed(1) + 'B'; if (value >= 1e6) return (value / 1e6).toFixed(1) + 'M'; if (value >= 1e3) return (value / 1e3).toFixed(0) + 'K'; return value.toString(); } return value; };
     options.plugins.legend.display = false; options.plugins.title = { display: false };
-    options.plugins.tooltip.callbacks.label = function (context) { let label = context.dataset.label || ''; if (label) label += ': '; if (context.parsed?.y !== null && context.parsed?.y !== undefined) { const v = context.parsed.y; if (v >= 1e9) label += (v / 1e9).toFixed(2) + 'B'; else if (v >= 1e6) label += (v / 1e6).toFixed(2) + 'M'; else if (v >= 1e3) label += Math.round(v / 1e3) + 'K'; else label += v.toLocaleString(); } return label; };
+    options.plugins.tooltip.callbacks.label = function (context) { let label = context.dataset.label || ''; if (label) label += ': '; if (context.parsed?.y !== null && context.parsed?.y !== undefined) { const v = context.parsed.y; if (v >= 1e9) label += (v / 1e9).toFixed(2) + 'B'; else if (v >= 1e6) label += (v / 1e6).toFixed(2) + 'M'; else if (v >= 1e3) label += Math.round(v / 1e3) + 'K'; else label += v.toLocaleString(); } else { label += 'N/A'; } return label; };
     createOrUpdateChart(canvasId, 'detailVolumeChartInstance', { type: 'bar', data: { datasets: [{ label: 'Volume', data: volumeData, backgroundColor: barColors, borderWidth: 0 }] }, options: options });
 }
 
 /** Creates/updates the High/Low range line chart. */
 function createHighLowChart(stockData) {
     const canvasId = 'highLowChart';
-    if (!stockData?.labels || !stockData?.high_values || !stockData?.low_values) { /* ... handle error ... */ console.warn(`HighLowChart: Missing data.`); createOrUpdateChart(canvasId, 'highLowChartInstance', { type: 'line', data: { datasets: [] }, options: { plugins: { title: { display: true, text: 'Data unavailable' } } } }); return; }
+    if (!stockData?.labels || !stockData?.high_values || !stockData?.low_values) { console.warn(`HighLowChart: Missing data.`); createOrUpdateChart(canvasId, 'highLowChartInstance', { type: 'line', data: { datasets: [] }, options: { plugins: { title: { display: true, text: 'Data unavailable' } } } }); return; }
     console.log(`Creating/Updating High/Low Chart (#${canvasId})`);
     const highData = parseChartData(stockData.labels, stockData.high_values, 'High');
     const lowData = parseChartData(stockData.labels, stockData.low_values, 'Low');
     console.log('High/Low - High Data (first 5):', JSON.stringify(highData.slice(0, 5)));
     console.log('High/Low - Low Data (first 5):', JSON.stringify(lowData.slice(0, 5)));
-    if (highData.length === 0 && lowData.length === 0) { /* ... handle error ... */ console.warn(`HighLowChart: No valid data.`); createOrUpdateChart(canvasId, 'highLowChartInstance', { type: 'line', data: { datasets: [] }, options: { plugins: { title: { display: true, text: 'Data unavailable' } } } }); return; }
-    const options = JSON.parse(JSON.stringify(commonChartOptions));
+    if (highData.length === 0 && lowData.length === 0) { console.warn(`HighLowChart: No valid data.`); createOrUpdateChart(canvasId, 'highLowChartInstance', { type: 'line', data: { datasets: [] }, options: { plugins: { title: { display: true, text: 'Data unavailable' } } } }); return; }
+    const options = JSON.parse(JSON.stringify(commonChartOptions)); // Use common options (linear x-axis)
     const currencyCode = stockData.currency || 'USD';
     options.scales.y.ticks.callback = function (value) { return typeof value === 'number' ? value.toLocaleString(undefined, { style: 'currency', currency: currencyCode, minimumFractionDigits: 2 }) : value; };
     options.plugins.tooltip.callbacks.label = function (context) { let label = context.dataset.label || ''; if (label) label += ': '; if (context.parsed?.y !== null && context.parsed?.y !== undefined) { label += context.parsed.y.toLocaleString(undefined, { style: 'currency', currency: currencyCode, minimumFractionDigits: 2 }); } else { label += 'N/A'; } return label; };
@@ -354,7 +326,7 @@ function refreshStockData() {
     if (!stockSymbolInput?.value) { console.warn("refreshStockData: Stock symbol missing."); return; }
     const stockSymbol = stockSymbolInput.value.trim().toUpperCase();
 
-    if (refreshIcon) { refreshIcon.className = 'fas fa-spinner fa-spin'; if (refreshButton) refreshButton.disabled = true; } // Simplified class change
+    if (refreshIcon) { refreshIcon.className = 'fas fa-spinner fa-spin'; if (refreshButton) refreshButton.disabled = true; }
     console.log(`Refreshing data for ${stockSymbol}...`); showFlashMessage(`Refreshing data for ${stockSymbol}...`, "info", 2000);
 
     fetch(`/refresh_stock?stock=${stockSymbol}`)
@@ -386,12 +358,12 @@ function refreshStockData() {
 
 // --- Update Header Info ---
 /** Updates the header elements (price, change, market status). */
-function updateStockInfo(stockData) { /* ... as before ... */ console.log("Updating stock header info..."); if (!stockData || typeof stockData !== 'object') { console.warn("updateStockInfo: Invalid stockData."); document.querySelector('.current-price').textContent = 'N/A'; document.querySelector('.change-percent').textContent = 'N/A'; document.querySelector('.change-percent').className = 'change-percent small text-muted d-block'; const marketStatusBadge = document.querySelector('.market-status-badge'); if (marketStatusBadge) { marketStatusBadge.className = 'market-status-badge badge rounded-pill px-3 py-1 bg-secondary text-white'; marketStatusBadge.querySelector('i').className = 'fas fa-question-circle me-1'; marketStatusBadge.querySelector('span').textContent = 'Market Unknown'; } return; } const priceEl = document.querySelector('.current-price'); const changeEl = document.querySelector('.change-percent'); const marketStatusBadge = document.querySelector('.market-status-badge'); const marketIcon = marketStatusBadge ? marketStatusBadge.querySelector('i') : null; const marketSpan = marketStatusBadge ? marketStatusBadge.querySelector('span') : null; const currencyCode = stockData.currency || 'USD'; if (priceEl) { priceEl.textContent = (stockData.current_price !== null && stockData.current_price !== undefined) ? stockData.current_price.toLocaleString(undefined, { style: 'currency', currency: currencyCode, minimumFractionDigits: 2 }) : 'N/A'; } if (changeEl) { const changePercent = stockData.change_percent; if (changePercent !== null && changePercent !== undefined) { const isPositive = changePercent >= 0; changeEl.classList.remove('text-success', 'text-danger', 'text-muted'); changeEl.classList.add(isPositive ? 'text-success' : 'text-danger'); changeEl.innerHTML = `<i class="fas ${isPositive ? 'fa-arrow-up' : 'fa-arrow-down'} me-1"></i>${changePercent.toFixed(2)}%`; } else { changeEl.innerHTML = 'N/A'; changeEl.className = 'change-percent small text-muted d-block'; } } if (marketStatusBadge && stockData.market_status) { const status = stockData.market_status.toUpperCase(); const status_lower = status.toLowerCase(); let badge_bg = 'bg-info'; let badge_text = 'text-white'; let badge_icon = 'fa-question-circle'; let displayStatus = status.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()); if (status_lower.includes('reg') || status_lower.includes('open')) { badge_bg = 'bg-success'; badge_text = 'text-white'; badge_icon = 'fa-check-circle'; displayStatus = 'Open'; } else if (status_lower.includes('pre')) { badge_bg = 'bg-warning'; badge_text = 'text-dark'; badge_icon = 'fa-hourglass-start'; displayStatus = 'Pre-Market'; } else if (status_lower.includes('post') || status_lower.includes('extended') || status_lower.includes('after')) { badge_bg = 'bg-warning'; badge_text = 'text-dark'; badge_icon = 'fa-hourglass-end'; displayStatus = 'After Hours'; } else if (status_lower.includes('closed')) { badge_bg = 'bg-secondary'; badge_text = 'text-white'; badge_icon = 'fa-times-circle'; displayStatus = 'Closed'; } marketStatusBadge.className = `market-status-badge badge rounded-pill px-3 py-1 ${badge_bg} ${badge_text}`; if (marketIcon) marketIcon.className = `fas ${badge_icon} me-1`; if (marketSpan) marketSpan.textContent = `Market ${displayStatus}`; } else if (marketStatusBadge) { marketStatusBadge.className = 'market-status-badge badge rounded-pill px-3 py-1 bg-secondary text-white'; if (marketIcon) marketIcon.className = 'fas fa-question-circle me-1'; if (marketSpan) marketSpan.textContent = 'Market Unknown'; } console.log("Stock header info updated."); }
+function updateStockInfo(stockData) { /* ... code remains the same ... */ console.log("Updating stock header info..."); if (!stockData || typeof stockData !== 'object') { console.warn("updateStockInfo: Invalid stockData."); document.querySelector('.current-price').textContent = 'N/A'; document.querySelector('.change-percent').textContent = 'N/A'; document.querySelector('.change-percent').className = 'change-percent small text-muted d-block'; const marketStatusBadge = document.querySelector('.market-status-badge'); if (marketStatusBadge) { marketStatusBadge.className = 'market-status-badge badge rounded-pill px-3 py-1 bg-secondary text-white'; marketStatusBadge.querySelector('i').className = 'fas fa-question-circle me-1'; marketStatusBadge.querySelector('span').textContent = 'Market Unknown'; } return; } const priceEl = document.querySelector('.current-price'); const changeEl = document.querySelector('.change-percent'); const marketStatusBadge = document.querySelector('.market-status-badge'); const marketIcon = marketStatusBadge ? marketStatusBadge.querySelector('i') : null; const marketSpan = marketStatusBadge ? marketStatusBadge.querySelector('span') : null; const currencyCode = stockData.currency || 'USD'; if (priceEl) { priceEl.textContent = (stockData.current_price !== null && stockData.current_price !== undefined) ? stockData.current_price.toLocaleString(undefined, { style: 'currency', currency: currencyCode, minimumFractionDigits: 2 }) : 'N/A'; } if (changeEl) { const changePercent = stockData.change_percent; if (changePercent !== null && changePercent !== undefined) { const isPositive = changePercent >= 0; changeEl.classList.remove('text-success', 'text-danger', 'text-muted'); changeEl.classList.add(isPositive ? 'text-success' : 'text-danger'); changeEl.innerHTML = `<i class="fas ${isPositive ? 'fa-arrow-up' : 'fa-arrow-down'} me-1"></i>${changePercent.toFixed(2)}%`; } else { changeEl.innerHTML = 'N/A'; changeEl.className = 'change-percent small text-muted d-block'; } } if (marketStatusBadge && stockData.market_status) { const status = stockData.market_status.toUpperCase(); const status_lower = status.toLowerCase(); let badge_bg = 'bg-info'; let badge_text = 'text-white'; let badge_icon = 'fa-question-circle'; let displayStatus = status.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()); if (status_lower.includes('reg') || status_lower.includes('open')) { badge_bg = 'bg-success'; badge_text = 'text-white'; badge_icon = 'fa-check-circle'; displayStatus = 'Open'; } else if (status_lower.includes('pre')) { badge_bg = 'bg-warning'; badge_text = 'text-dark'; badge_icon = 'fa-hourglass-start'; displayStatus = 'Pre-Market'; } else if (status_lower.includes('post') || status_lower.includes('extended') || status_lower.includes('after')) { badge_bg = 'bg-warning'; badge_text = 'text-dark'; badge_icon = 'fa-hourglass-end'; displayStatus = 'After Hours'; } else if (status_lower.includes('closed')) { badge_bg = 'bg-secondary'; badge_text = 'text-white'; badge_icon = 'fa-times-circle'; displayStatus = 'Closed'; } marketStatusBadge.className = `market-status-badge badge rounded-pill px-3 py-1 ${badge_bg} ${badge_text}`; if (marketIcon) marketIcon.className = `fas ${badge_icon} me-1`; if (marketSpan) marketSpan.textContent = `Market ${displayStatus}`; } else if (marketStatusBadge) { marketStatusBadge.className = 'market-status-badge badge rounded-pill px-3 py-1 bg-secondary text-white'; if (marketIcon) marketIcon.className = 'fas fa-question-circle me-1'; if (marketSpan) marketSpan.textContent = 'Market Unknown'; } console.log("Stock header info updated."); }
 
 // --- Flash Messages Utility ---
-function showFlashMessage(message, category = 'info', duration = 5000) { /* ... as before ... */ console.log(`Flash (${category}): ${message}`); const container = document.querySelector('.flash-messages-container') || createFlashContainer(); if (!container) { console.error("Flash message container not found."); return; } const alertDiv = document.createElement('div'); const alertClass = `alert-${category === 'error' ? 'danger' : category}`; const iconClass = category === 'danger' || category === 'error' ? 'fa-exclamation-triangle' : category === 'warning' ? 'fa-exclamation-circle' : category === 'success' ? 'fa-check-circle' : 'fa-info-circle'; alertDiv.className = `alert ${alertClass} alert-dismissible fade show shadow-sm mb-2`; alertDiv.setAttribute('role', 'alert'); alertDiv.innerHTML = `<i class="fas ${iconClass} me-2"></i>${message}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>`; container.appendChild(alertDiv); setTimeout(() => { try { const bsAlert = bootstrap.Alert.getInstance(alertDiv); if (bsAlert) bsAlert.close(); else fadeOutAndRemove(alertDiv); } catch (e) { fadeOutAndRemove(alertDiv); } }, duration); }
-function createFlashContainer() { /* ... as before ... */ let c = document.querySelector('.flash-messages-container'); if (!c) { c = document.createElement('div'); c.className = 'flash-messages-container position-fixed top-0 end-0 p-3'; c.style.zIndex = '1060'; document.body.appendChild(c); } return c; }
-function fadeOutAndRemove(element) { /* ... as before ... */ if (!element || !element.parentNode) return; element.style.transition = 'opacity 0.5s ease'; element.style.opacity = '0'; setTimeout(() => { if (element.parentNode) element.parentNode.removeChild(element); }, 500); }
+function showFlashMessage(message, category = 'info', duration = 5000) { /* ... code remains the same ... */ console.log(`Flash (${category}): ${message}`); const container = document.querySelector('.flash-messages-container') || createFlashContainer(); if (!container) { console.error("Flash message container not found."); return; } const alertDiv = document.createElement('div'); const alertClass = `alert-${category === 'error' ? 'danger' : category}`; const iconClass = category === 'danger' || category === 'error' ? 'fa-exclamation-triangle' : category === 'warning' ? 'fa-exclamation-circle' : category === 'success' ? 'fa-check-circle' : 'fa-info-circle'; alertDiv.className = `alert ${alertClass} alert-dismissible fade show shadow-sm mb-2`; alertDiv.setAttribute('role', 'alert'); alertDiv.innerHTML = `<i class="fas ${iconClass} me-2"></i>${message}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>`; container.appendChild(alertDiv); setTimeout(() => { try { const bsAlert = bootstrap.Alert.getInstance(alertDiv); if (bsAlert) bsAlert.close(); else fadeOutAndRemove(alertDiv); } catch (e) { fadeOutAndRemove(alertDiv); } }, duration); }
+function createFlashContainer() { /* ... code remains the same ... */ let c = document.querySelector('.flash-messages-container'); if (!c) { c = document.createElement('div'); c.className = 'flash-messages-container position-fixed top-0 end-0 p-3'; c.style.zIndex = '1060'; document.body.appendChild(c); } return c; }
+function fadeOutAndRemove(element) { /* ... code remains the same ... */ if (!element || !element.parentNode) return; element.style.transition = 'opacity 0.5s ease'; element.style.opacity = '0'; setTimeout(() => { if (element.parentNode) element.parentNode.removeChild(element); }, 500); }
 
 // --- Initialize Detail Charts ---
 /** Initializes charts shown in the lower part of the overview tab. */
@@ -399,7 +371,7 @@ function initializeDetailCharts() {
     // Check for libraries first
     if (typeof Chart === 'undefined') { console.warn("initializeDetailCharts: Chart.js not ready."); return; }
     // Check for data
-    if (!window.stockData || window.stockData.error) { console.warn("initializeDetailCharts: Stock data unavailable."); /* Show placeholder messages */ const detailContainers = document.querySelectorAll('.details-chart-container'); detailContainers.forEach(container => { container.innerHTML = `<div class="alert alert-light text-center small p-2 m-0">Data not available.</div>`; }); return; }
+    if (!window.stockData || window.stockData.error) { console.warn("initializeDetailCharts: Stock data unavailable."); const detailContainers = document.querySelectorAll('.details-chart-container'); detailContainers.forEach(container => { container.innerHTML = `<div class="alert alert-light text-center small p-2 m-0">Data not available.</div>`; }); return; }
 
     console.log("Initializing detail charts...");
     createOpenCloseChart(window.stockData);
