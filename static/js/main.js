@@ -55,67 +55,67 @@ function loadStock(symbol) {
 
 // --- DOMContentLoaded Event Listener ---
 // Executes code once the basic HTML structure is loaded.
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', function () {
     console.log("main.js: DOMContentLoaded event fired.");
 
     // Add submit listener to the search form to show loading state
     // (This handles cases where the user types and presses Enter/clicks Search manually)
     const searchForm = document.getElementById('searchForm');
     if (searchForm) {
-        searchForm.addEventListener('submit', function(event) {
-             // Check if the input is actually filled (basic validation)
-             const stockInput = document.getElementById('stock');
-             if (!stockInput || !stockInput.value.trim()) {
-                  console.log("Search form submitted with empty input. Preventing submission.");
-                  event.preventDefault(); // Prevent empty submission
-                  // Optionally show a message to the user
-                  stockInput?.focus(); // Focus the input field
-                  showFlashMessage("Please enter a stock symbol.", "warning"); // Use flash message utility
-                  return; // Stop processing
-             }
+        searchForm.addEventListener('submit', function (event) {
+            // Check if the input is actually filled (basic validation)
+            const stockInput = document.getElementById('stock');
+            if (!stockInput || !stockInput.value.trim()) {
+                console.log("Search form submitted with empty input. Preventing submission.");
+                event.preventDefault(); // Prevent empty submission
+                // Optionally show a message to the user
+                stockInput?.focus(); // Focus the input field
+                showFlashMessage("Please enter a stock symbol.", "warning"); // Use flash message utility
+                return; // Stop processing
+            }
 
-             // If input is valid, show loading state
-             console.log("Search form submitted manually, showing loading state.");
-             const submitButton = searchForm.querySelector('button[type="submit"]');
-             const buttonIcon = submitButton ? submitButton.querySelector('i') : null;
-             if (submitButton && buttonIcon) {
-                 buttonIcon.classList.remove('fa-search');
-                 buttonIcon.classList.add('fa-spinner', 'fa-spin');
-                 submitButton.disabled = true;
-             }
-             // Allow the form submission to proceed naturally
+            // If input is valid, show loading state
+            console.log("Search form submitted manually, showing loading state.");
+            const submitButton = searchForm.querySelector('button[type="submit"]');
+            const buttonIcon = submitButton ? submitButton.querySelector('i') : null;
+            if (submitButton && buttonIcon) {
+                buttonIcon.classList.remove('fa-search');
+                buttonIcon.classList.add('fa-spinner', 'fa-spin');
+                submitButton.disabled = true;
+            }
+            // Allow the form submission to proceed naturally
         });
         console.log("Submit listener added to #searchForm.");
     } else {
-         console.warn("main.js: Search form (#searchForm) not found. Submit listener not added.");
+        console.warn("main.js: Search form (#searchForm) not found. Submit listener not added.");
     }
 
-     // Optional: Populate search input from URL parameter on page load/refresh
-     // This helps maintain state if the page is reloaded with a stock parameter
-     try {
-         const urlParams = new URLSearchParams(window.location.search);
-         const stockParam = urlParams.get('stock');
-         const stockInput = document.getElementById('stock');
-         if (stockParam && stockInput && !stockInput.value) { // Only fill if input is currently empty
-             console.log(`Populating stock input from URL parameter: ${stockParam}`);
-             stockInput.value = stockParam;
-         }
-     } catch (e) {
-         console.error("Error processing URL parameters:", e);
-     }
+    // Optional: Populate search input from URL parameter on page load/refresh
+    // This helps maintain state if the page is reloaded with a stock parameter
+    try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const stockParam = urlParams.get('stock');
+        const stockInput = document.getElementById('stock');
+        if (stockParam && stockInput && !stockInput.value) { // Only fill if input is currently empty
+            console.log(`Populating stock input from URL parameter: ${stockParam}`);
+            stockInput.value = stockParam;
+        }
+    } catch (e) {
+        console.error("Error processing URL parameters:", e);
+    }
 
-     // Initialize Bootstrap Tooltips (can be done here or in script.js, ensure it's done once)
-     // If script.js already does this, remove it from here.
-     /*
-     const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-     if (tooltipTriggerList.length > 0) {
-         tooltipTriggerList.map(function (tooltipTriggerEl) {
-           return new bootstrap.Tooltip(tooltipTriggerEl);
-         });
-         console.log("main.js: Bootstrap tooltips initialized.");
-     }
-     */
+    // Initialize Bootstrap Tooltips (can be done here or in script.js, ensure it's done once)
+    // If script.js already does this, remove it from here.
+    /*
+    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    if (tooltipTriggerList.length > 0) {
+        tooltipTriggerList.map(function (tooltipTriggerEl) {
+          return new bootstrap.Tooltip(tooltipTriggerEl);
+        });
+        console.log("main.js: Bootstrap tooltips initialized.");
+    }
+    */
 
-     console.log("main.js: Initial setup complete.");
+    console.log("main.js: Initial setup complete.");
 
 }); // End DOMContentLoaded

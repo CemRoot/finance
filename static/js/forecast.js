@@ -17,10 +17,10 @@ function showForecastLoading(message = "Loading forecast data...") {
     const statusDiv = document.getElementById(FORECAST_STATUS_DIV_ID);
     if (!chartDiv) { console.error("showForecastLoading: Chart div not found:", FORECAST_CHART_DIV_ID); return; }
     if (forecastChartInstance) { try { Plotly.purge(chartDiv); } catch (e) { console.error("Error purging forecast chart:", e); } forecastChartInstance = null; }
-     try {
+    try {
         Plotly.newPlot(chartDiv, [], { title: 'Loading...', xaxis: { visible: false }, yaxis: { visible: false }, plot_bgcolor: '#FFFFFF', paper_bgcolor: '#FFFFFF', margin: { l: 40, r: 20, t: 60, b: 40 }, annotations: [{ text: message, xref: "paper", yref: "paper", x: 0.5, y: 0.5, showarrow: false, font: { size: 14, color: '#6c757d' } }] }, { responsive: true });
         forecastChartInstance = chartDiv; console.log("Forecast chart placeholder shown.");
-     } catch (e) { console.error("Error creating Plotly loading placeholder:", e); chartDiv.innerHTML = `<div class="alert alert-light text-center p-5">${message}</div>`; }
+    } catch (e) { console.error("Error creating Plotly loading placeholder:", e); chartDiv.innerHTML = `<div class="alert alert-light text-center p-5">${message}</div>`; }
     if (statusDiv) { statusDiv.textContent = message; statusDiv.className = 'text-center text-muted small mt-2'; }
     updateForecastMetrics(null); updateForecastSummary(null);
 }
@@ -31,10 +31,10 @@ function showForecastError(errorMessage) {
     console.error("Forecast Error:", errorMessage);
     if (chartDiv) {
         if (forecastChartInstance) { try { Plotly.purge(chartDiv); } catch (e) { console.error("Error purging chart on error:", e); } forecastChartInstance = null; }
-         try {
-             Plotly.newPlot(chartDiv, [], { title: 'Forecast Error', xaxis: { visible: false }, yaxis: { visible: false }, plot_bgcolor: '#FFFFFF', paper_bgcolor: '#FFFFFF', margin: { l: 40, r: 20, t: 60, b: 40 }, annotations: [{ text: `Error: ${errorMessage}`, xref: "paper", yref: "paper", x: 0.5, y: 0.5, showarrow: false, font: { size: 12, color: '#dc3545' } }] }, { responsive: true });
-             forecastChartInstance = chartDiv; console.log("Forecast chart error state shown.");
-         } catch(e) { console.error("Error displaying Plotly error state:", e); chartDiv.innerHTML = `<div class="alert alert-danger text-center p-3">Error loading forecast: ${errorMessage}</div>`; }
+        try {
+            Plotly.newPlot(chartDiv, [], { title: 'Forecast Error', xaxis: { visible: false }, yaxis: { visible: false }, plot_bgcolor: '#FFFFFF', paper_bgcolor: '#FFFFFF', margin: { l: 40, r: 20, t: 60, b: 40 }, annotations: [{ text: `Error: ${errorMessage}`, xref: "paper", yref: "paper", x: 0.5, y: 0.5, showarrow: false, font: { size: 12, color: '#dc3545' } }] }, { responsive: true });
+            forecastChartInstance = chartDiv; console.log("Forecast chart error state shown.");
+        } catch (e) { console.error("Error displaying Plotly error state:", e); chartDiv.innerHTML = `<div class="alert alert-danger text-center p-3">Error loading forecast: ${errorMessage}</div>`; }
     }
     if (statusDiv) { statusDiv.textContent = `Error: ${errorMessage}`; statusDiv.className = 'text-center text-danger small mt-2'; }
     updateForecastMetrics(null); updateForecastSummary(null);
@@ -57,12 +57,12 @@ function updateForecastChart(data, stockSymbol) {
         Plotly.react(chartDiv, [traceLowerBound, traceUpperBound, traceForecast], layout, { responsive: true });
         forecastChartInstance = chartDiv; console.log("Forecast chart updated with new data.");
         if (statusDiv) {
-             // Luxon is loaded in the head, should be available here unless blocked
+            // Luxon is loaded in the head, should be available here unless blocked
             const timestamp = (data.timestamp && typeof luxon !== 'undefined')
                 ? luxon.DateTime.fromISO(data.timestamp).toFormat('dd MMM yyyy HH:mm:ss ZZZZ')
                 : (data.timestamp || 'N/A'); // Fallback if Luxon is missing or timestamp missing
             statusDiv.textContent = `Forecast generated. Last updated: ${timestamp}`;
-             statusDiv.className = 'text-center text-muted small mt-2';
+            statusDiv.className = 'text-center text-muted small mt-2';
         }
     } catch (e) { console.error("Error updating forecast chart with Plotly:", e); showForecastError("Failed to render the forecast chart."); }
 }
@@ -77,16 +77,16 @@ function updateForecastMetrics(data) {
         if (value !== null && value !== undefined && value !== '' && !isNaN(value)) { // Added isNaN check and empty string check
             el.textContent = formatFn ? formatFn(value) : value;
             el.className = 'metric-value fw-medium'; // Reset class
-             if (el.id === 'historicalVolatility') { if (value * 100 < 25) el.classList.add('text-success'); else if (value * 100 < 50) el.classList.add('text-warning'); else el.classList.add('text-danger'); }
+            if (el.id === 'historicalVolatility') { if (value * 100 < 25) el.classList.add('text-success'); else if (value * 100 < 50) el.classList.add('text-warning'); else el.classList.add('text-danger'); }
         } else if (value === 'Upward' || value === 'Downward' || value === 'Sideways' || value === 'Uncertain' || value === 'Unknown') { // Handle direction strings explicitly
-             el.textContent = value;
-             el.className = 'metric-value fw-medium';
-             if (value === 'Upward') el.classList.add('text-success');
-             else if (value === 'Downward') el.classList.add('text-danger');
-             else el.classList.add('text-secondary');
+            el.textContent = value;
+            el.className = 'metric-value fw-medium';
+            if (value === 'Upward') el.classList.add('text-success');
+            else if (value === 'Downward') el.classList.add('text-danger');
+            else el.classList.add('text-secondary');
         } else {
             el.textContent = 'N/A';
-             el.className = 'metric-value fw-medium text-muted';
+            el.className = 'metric-value fw-medium text-muted';
         }
     };
     // *** DEBUG: Log the data object passed to metrics ***
@@ -153,15 +153,15 @@ async function loadForecastData(stockSymbol) {
         // *** DEBUG LOG ADDED HERE ***
 
         if (stockSymbol === currentStockSymbol) {
-             // *** DEBUG LOG ADDED HERE ***
+            // *** DEBUG LOG ADDED HERE ***
             console.log("Metrics object before update:", data.metrics);
-             updateForecastChart(data, stockSymbol);
-             updateForecastMetrics(data);
-             updateForecastSummary(data);
+            updateForecastChart(data, stockSymbol);
+            updateForecastMetrics(data);
+            updateForecastSummary(data);
         } else { console.log(`Forecast data for ${stockSymbol} received, but user now viewing ${currentStockSymbol}. Discarding.`); }
     } catch (error) {
         console.error(`Failed to load/process forecast data for ${stockSymbol}:`, error);
-         if (stockSymbol === currentStockSymbol) { showForecastError(error.message || "Unknown error occurred."); }
+        if (stockSymbol === currentStockSymbol) { showForecastError(error.message || "Unknown error occurred."); }
     } finally {
         isLoadingForecast = false;
         if (refreshBtn) refreshBtn.disabled = false; // Re-enable refresh button
@@ -169,20 +169,20 @@ async function loadForecastData(stockSymbol) {
 }
 
 async function fetchWithRetry(url, options = {}, retries = 0) {
-     console.log(`Fetching (Attempt ${retries + 1}/${MAX_RETRIES + 1}): ${url}`);
-     try {
-         const response = await fetch(url, options);
-         if ((response.status === 429 || response.status === 503 || response.status === 504) && retries < MAX_RETRIES) { const delay = RETRY_DELAY * (retries + 1); console.warn(`Received status ${response.status}. Retrying after ${delay}ms...`); await new Promise(resolve => setTimeout(resolve, delay)); return fetchWithRetry(url, options, retries + 1); }
-         return response;
-     } catch (error) {
-         if (retries < MAX_RETRIES) { const delay = RETRY_DELAY * (retries + 1); console.warn(`Fetch failed (${error.message}). Retrying after ${delay}ms...`); await new Promise(resolve => setTimeout(resolve, delay)); return fetchWithRetry(url, options, retries + 1); }
-         console.error(`Fetch failed after ${MAX_RETRIES + 1} attempts: ${error.message}`); throw error;
-     }
- }
+    console.log(`Fetching (Attempt ${retries + 1}/${MAX_RETRIES + 1}): ${url}`);
+    try {
+        const response = await fetch(url, options);
+        if ((response.status === 429 || response.status === 503 || response.status === 504) && retries < MAX_RETRIES) { const delay = RETRY_DELAY * (retries + 1); console.warn(`Received status ${response.status}. Retrying after ${delay}ms...`); await new Promise(resolve => setTimeout(resolve, delay)); return fetchWithRetry(url, options, retries + 1); }
+        return response;
+    } catch (error) {
+        if (retries < MAX_RETRIES) { const delay = RETRY_DELAY * (retries + 1); console.warn(`Fetch failed (${error.message}). Retrying after ${delay}ms...`); await new Promise(resolve => setTimeout(resolve, delay)); return fetchWithRetry(url, options, retries + 1); }
+        console.error(`Fetch failed after ${MAX_RETRIES + 1} attempts: ${error.message}`); throw error;
+    }
+}
 
 
 // --- Event Listeners ---
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', function () {
     console.log("forecast.js: DOMContentLoaded event fired.");
     const forecastMetaDiv = document.getElementById(FORECAST_META_DIV_ID);
     const initialStockSymbol = forecastMetaDiv ? forecastMetaDiv.dataset.stockSymbol : null;
@@ -194,17 +194,17 @@ document.addEventListener('DOMContentLoaded', function() {
     else { console.log("forecast.js: No initial stock symbol found."); showForecastLoading("Select a stock to view forecast."); }
 
     if (refreshBtn) {
-        refreshBtn.addEventListener('click', function() {
-             const currentSymbol = document.getElementById(FORECAST_META_DIV_ID)?.dataset.stockSymbol;
+        refreshBtn.addEventListener('click', function () {
+            const currentSymbol = document.getElementById(FORECAST_META_DIV_ID)?.dataset.stockSymbol;
             if (currentSymbol && !isLoadingForecast) { // Check isLoadingForecast flag
-                 console.log(`Forecast refresh triggered for ${currentSymbol}`); this.disabled = true;
-                 fetch(`/clear_cache?key=forecast_${currentSymbol}`)
-                    .then(res => { if(!res.ok) console.warn("Could not clear forecast cache."); return loadForecastData(currentSymbol); })
+                console.log(`Forecast refresh triggered for ${currentSymbol}`); this.disabled = true;
+                fetch(`/clear_cache?key=forecast_${currentSymbol}`)
+                    .then(res => { if (!res.ok) console.warn("Could not clear forecast cache."); return loadForecastData(currentSymbol); })
                     .catch(err => { console.error("Error clearing cache:", err); loadForecastData(currentSymbol); });
             } else if (isLoadingForecast) { console.log("Refresh button clicked, but forecast is already loading."); }
             else { console.warn("Refresh forecast clicked but no symbol found."); }
         });
-         console.log("Refresh forecast button listener attached.");
+        console.log("Refresh forecast button listener attached.");
     } else { console.warn("Refresh forecast button not found."); }
 
     const forecastTabLink = document.getElementById('forecasting-tab');
@@ -216,6 +216,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 catch (e) { console.error("Plotly resize error on tab show:", e); }
             } else { console.warn("Forecast tab shown, but Plotly chart not ready for resize."); }
         });
-         console.log("Listener attached for 'shown.bs.tab' on forecast tab.");
+        console.log("Listener attached for 'shown.bs.tab' on forecast tab.");
     } else { console.warn("Forecast tab link ('#forecasting-tab') not found."); }
 });
