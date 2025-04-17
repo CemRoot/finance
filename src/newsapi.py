@@ -51,7 +51,7 @@ def get_news(stock, lang='en'):
             'apiKey': NEWSAPI_KEY, 'resultType': 'articles', 'articlesPage': 1,
             'articlesCount': 20, 'articlesSortBy': 'date', 'articlesSortByAsc': False,
             'articleBodyLen': -1, 'dataType': ['news'], 'forceMaxDataTimeWindow': 7,
-            'lang': lang, 'keyword': stock, 'categoryUri': 'dmoz/Business/Financial_Services',
+            'lang': lang, 'keyword': stock, #'categoryUri': 'dmoz/Business/Financial_Services',
             'minSentiment': -1.0, 'maxSentiment': 1.0, 'dateEnd': date.today().strftime('%Y-%m-%d')
         }
         params = {k: v for k, v in params.items() if v is not None and v != ''}
