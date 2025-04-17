@@ -193,17 +193,17 @@ def get_news(stock: str, lang: str = 'en') -> list | dict:
             'articlesCount': 20,
             'articlesSortBy': 'date',
             'articlesSortByAsc': False,
-            'articleBodyLen': -1, # Get full body initially
+            # *** DÜZELTME: articleBodyLen'i düşür ***
+            'articleBodyLen': 250,
+            # *** DÜZELTME SONU ***
             'dataType': ['news'],
-            'forceMaxDataTimeWindow': 7, # Look back 7 days for specific news
+            'forceMaxDataTimeWindow': 7, # 7 güne geri dönelim (isteğe bağlı)
             'lang': lang,
             'keyword': stock,
-            # 'categoryUri': 'dmoz/Business/Financial_Services', # Removed for broader search
-            'minSentiment': -1.0, # Optional filters
-            'maxSentiment': 1.0,
+            # 'minSentiment': -1.0, # Kaldırıldı
+            # 'maxSentiment': 1.0, # Kaldırıldı
             'dateEnd': date.today().strftime('%Y-%m-%d')
         }
-        # Remove None/empty values from params
         primary_params = {k: v for k, v in primary_params.items() if v is not None and v != ''}
 
         logger.info("Attempting PRIMARY news search for {} with params: {}".format(stock, primary_params))

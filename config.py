@@ -15,7 +15,7 @@ NEWSAPI_ENDPOINT = 'https://eventregistry.org/api/v1/article/getArticles'
 
 # API Request Timeout (seconds)
 # How long to wait for a response from external APIs (NewsAPI, potentially others)
-API_TIMEOUT = 20  # Increased slightly for potentially slower APIs
+API_TIMEOUT = 10  # Increased slightly for potentially slower APIs
 
 # yfinance Request Rate Limit (seconds)
 # Minimum time interval between consecutive calls to yfinance to avoid being rate-limited.
