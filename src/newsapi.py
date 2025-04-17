@@ -193,15 +193,15 @@ def get_news(stock: str, lang: str = 'en') -> list | dict:
             'articlesCount': 20,
             'articlesSortBy': 'date',
             'articlesSortByAsc': False,
-            # *** DÜZELTME: articleBodyLen'i düşür ***
-            'articleBodyLen': 250,
-            # *** DÜZELTME SONU ***
+            # Tam makale metni için articleBodyLen -1 olmalı
+            'articleBodyLen': -1,
             'dataType': ['news'],
-            'forceMaxDataTimeWindow': 7, # 7 güne geri dönelim (isteğe bağlı)
+            'forceMaxDataTimeWindow': 31, # Son 31 güne kadar ara (maksimum izin verilen)
             'lang': lang,
+            # Daha kapsamlı arama için:
+            'keywordLoc': 'body,title', # Hem başlık hem metin içinde ara
+            'keywordOper': 'or', # Herhangi bir eşleşmeyi bul
             'keyword': stock,
-            # 'minSentiment': -1.0, # Kaldırıldı
-            # 'maxSentiment': 1.0, # Kaldırıldı
             'dateEnd': date.today().strftime('%Y-%m-%d')
         }
         primary_params = {k: v for k, v in primary_params.items() if v is not None and v != ''}
@@ -257,11 +257,11 @@ def get_news(stock: str, lang: str = 'en') -> list | dict:
                 'articlesCount': 20, # Number of general news items
                 'articlesSortBy': 'date',
                 'articlesSortByAsc': False,
-                'articleBodyLen': -1,
+                'articleBodyLen': -1, # Tam makale metni için
                 'dataType': ['news'],
                 'lang': lang,
                 'sourceUri': FALLBACK_SOURCE_URIS, # Use predefined sources
-                'forceMaxDataTimeWindow': 3, # Look back 3 days for general news
+                'forceMaxDataTimeWindow': 7, # Look back 7 days for general news
                 'dateEnd': date.today().strftime('%Y-%m-%d')
             }
             fallback_params = {k: v for k, v in fallback_params.items() if v is not None and v != ''}
