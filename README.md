@@ -119,14 +119,3 @@ This web application provides a dashboard for financial analysis, forecasting, a
 *   Improved error handling and user feedback.
 *   Internationalization/Localization support.
 *   Dockerization for easier deployment.
-
-```
-
-**Summary of Changes/Verification in `README.md`:**
-
-1.  **Overview/Features:** Updated to accurately reflect the current capabilities, including the specific libraries used (Chart.js, Plotly, Prophet, FinBERT, pandas-ta), the type of analysis performed (sentiment, technical indicators, forecasting), and features like caching. Explicitly mentions the combined decision logic.
-2.  **Project Structure:** Correctly lists the key files and directories based on the provided codebase.
-3.  **Setup Instructions:** Provides clear, step-by-step instructions for cloning, setting up a virtual environment, installing requirements, configuring the optional `.env` file for the API key, and running the application. Includes platform-specific commands. Added a note about potentially long install times for ML libraries.
-4.  **Usage:** Briefly explains how to interact with the application.
-5.  **Future Enhancements:** Added a section with ideas for potential improvements.
-6.  **Formatting:** Uses Markdown for clear headings, lists, and code blocks.
