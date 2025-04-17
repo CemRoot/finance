@@ -6,7 +6,6 @@ import src.decision as decision # Decision module
 import src.forecasting as forecasting # Forecasting module
 import src.sentiment as sentiment # Sentiment module
 import json
-# *** FIX: Correct datetime import ***
 from datetime import datetime, timedelta # Import specific classes
 import time
 from functools import wraps
@@ -83,7 +82,7 @@ def format_date(value, format_str='%d %b %Y'):
     if not value: return ''
     try:
         dt_obj = None
-        if isinstance(value, datetime): dt_obj = value # Use datetime class directly
+        if isinstance(value, datetime): dt_obj = value
         elif isinstance(value, str):
             try: dt_obj = pd.to_datetime(value, errors='raise').to_pydatetime()
             except ValueError: app.logger.debug(f"format_date: Could not parse date string '{value}'"); return value
@@ -93,14 +92,12 @@ def format_date(value, format_str='%d %b %Y'):
         return dt_obj.strftime(format_str)
     except Exception as e: app.logger.error(f"Error formatting date '{value}': {e}", exc_info=False); return str(value)
 
-# Register filters and globals (removed 'now' lambda)
+# Register filters and globals
 app.jinja_env.filters['calculate_average'] = calculate_average
 app.jinja_env.filters['safe_sum'] = safe_sum
 app.jinja_env.filters['variance'] = calculate_variance
 app.jinja_env.filters['format_number'] = format_number
 app.jinja_env.filters['format_date'] = format_date
-# *** FIX: Ensure 'datetime' class is available if needed by filters/templates ***
-# Pass the actual datetime class, not the module
 app.jinja_env.globals.update(abs=abs, len=len, isinstance=isinstance, float=float, int=int, str=str, list=list, dict=dict, datetime=datetime, max=max, min=min, round=round)
 
 # --- Main Route ---
@@ -129,20 +126,13 @@ def index():
         stock_symbol = stock_symbol_arg.strip().upper()
         session['last_symbol'] = stock_symbol
     elif not stock_symbol:
-        # *** FIX: Define current_time even for welcome screen ***
         current_utc_time = datetime.utcnow().replace(tzinfo=pytz.utc)
-        return render_template('index.html', stock=None, current_time=current_utc_time) # Pass current_time
+        return render_template('index.html', stock=None, current_time=current_utc_time)
 
     # --- Define variables with defaults BEFORE the main try block ---
-    stock_data = None
-    articles = []
-    tech_indicators = {}
-    avg_sentiment = 0.0
-    decision_result = "Analysis Pending"
-    error_occurred = False
-    error_message = None
-    # *** FIX: Define current_time HERE, before try block ***
-    current_utc_time = datetime.utcnow().replace(tzinfo=pytz.utc)
+    stock_data = None; articles = []; tech_indicators = {}; avg_sentiment = 0.0
+    decision_result = "Analysis Pending"; error_occurred = False; error_message = None
+    current_utc_time = datetime.utcnow().replace(tzinfo=pytz.utc) # Defined here
 
     app.logger.info(f"Processing GET request for symbol: {stock_symbol}")
 
@@ -150,128 +140,70 @@ def index():
     try:
         # 1. Get Stock Data
         stock_data = cached_get_stock_data(stock_symbol)
-        if stock_data.get('error'):
-            raise ValueError(stock_data['error']) # Raise error to be caught below
-        if not stock_data or not stock_data.get('labels') or not stock_data.get('values'):
-             raise ValueError(f"Stock data for '{stock_symbol}' is missing or incomplete.")
+        if stock_data.get('error'): raise ValueError(stock_data['error'])
+        if not stock_data or not stock_data.get('labels') or not stock_data.get('values'): raise ValueError(f"Stock data for '{stock_symbol}' missing/incomplete.")
 
-        # 2. Calculate Technical Indicators (if stock_data is valid)
+        # 2. Calculate Technical Indicators
         try:
-            # Create DataFrame (Ensure correct date parsing format if needed)
-            df = pd.DataFrame({
-                 'Open': stock_data.get('open_values'), 'High': stock_data.get('high_values'),
-                 'Low': stock_data.get('low_values'), 'Close': stock_data.get('values'),
-                 'Volume': stock_data.get('volume_values')
-             }, index=pd.to_datetime(stock_data.get('labels'), format='ISO8601', errors='coerce')) # Using ISO format
-            df = df[pd.notna(df.index)] # Remove rows with invalid dates
-            df.dropna(subset=['Close'], inplace=True) # Remove rows with NaN close price
+            df = pd.DataFrame({'Open': stock_data.get('open_values'), 'High': stock_data.get('high_values'), 'Low': stock_data.get('low_values'), 'Close': stock_data.get('values'), 'Volume': stock_data.get('volume_values')}, index=pd.to_datetime(stock_data.get('labels'), format='ISO8601', errors='coerce'))
+            df = df[pd.notna(df.index)]; df.dropna(subset=['Close'], inplace=True)
 
             if not df.empty:
-                 app.logger.info(f"Calculating TA indicators for {stock_symbol} with {len(df)} data points.")
-                 min_rows_for_full_ta = 20 # Minimum rows for SMA(20), MACD, BBands(20)
-
-                 # Calculate Volatility
-                 if len(df) >= 2:
-                     df['returns'] = df['Close'].pct_change()
-                     std_dev = df['returns'].std()
-                     tech_indicators['volatility'] = std_dev * np.sqrt(252) if pd.notna(std_dev) else None
-
-                 # Calculate other indicators if enough data
-                 if len(df) >= min_rows_for_full_ta:
-                     df.ta.sma(length=20, append=True); df.ta.rsi(length=14, append=True)
-                     df.ta.macd(fast=12, slow=26, signal=9, append=True); df.ta.bbands(length=20, std=2, append=True)
-                     last = df.iloc[-1] # Get the last row
-                     # Safely get values using .get()
-                     cp = last.get('Close'); sma20 = last.get('SMA_20'); rsi14 = last.get('RSI_14')
-                     macd = last.get('MACD_12_26_9'); macds = last.get('MACDs_12_26_9'); macdh = last.get('MACDh_12_26_9')
-                     bbl = last.get('BBL_20_2.0'); bbu = last.get('BBU_20_2.0'); bbm = last.get('BBM_20_2.0')
-                     # Assign to tech_indicators dict with checks
-                     if pd.notna(cp) and pd.notna(sma20): tech_indicators['sma'] = 'Above' if cp > sma20 else ('Below' if cp < sma20 else 'Equal')
-                     if pd.notna(rsi14): tech_indicators['rsi'] = 'Overbought' if rsi14 > 70 else ('Oversold' if rsi14 < 30 else 'Neutral')
-                     if pd.notna(macd) and pd.notna(macds): tech_indicators['macd'] = 'Buy Signal (Positive)' if macd > macds else 'Sell Signal (Negative)'
-                     if pd.notna(macdh): tech_indicators['macd_hist'] = float(round(macdh, 3))
-                     if pd.notna(cp) and pd.notna(bbl) and pd.notna(bbu):
-                         if cp < bbl: tech_indicators['bbands'] = 'Below Lower Band'
-                         elif cp > bbu: tech_indicators['bbands'] = 'Above Upper Band'
-                         else: tech_indicators['bbands'] = 'Inside Bands'
-                     if pd.notna(bbm): tech_indicators['bbands_mid'] = float(round(bbm, 2))
-                 else:
-                     app.logger.warning(f"Insufficient data ({len(df)} rows) for full TA for {stock_symbol}")
-                     flash(f"Limited data available for {stock_symbol}, some indicators might be missing.", 'info')
-            else:
-                 app.logger.warning(f"DataFrame empty after cleaning for {stock_symbol}. Skipping TA.")
-
-        except Exception as ta_error:
-             app.logger.error(f"Error calculating technical indicators for {stock_symbol}: {ta_error}", exc_info=True)
-             flash(f"Warning: Could not calculate technical indicators for {stock_symbol}.", 'warning')
-             tech_indicators = {} # Ensure it's empty on error
+                app.logger.info(f"Calculating TA indicators for {stock_symbol} with {len(df)} data points.")
+                min_rows_for_full_ta = 20
+                if len(df) >= 2: df['returns'] = df['Close'].pct_change(); std_dev = df['returns'].std(); tech_indicators['volatility'] = std_dev * np.sqrt(252) if pd.notna(std_dev) else None
+                if len(df) >= min_rows_for_full_ta:
+                    df.ta.sma(length=20, append=True); df.ta.rsi(length=14, append=True)
+                    df.ta.macd(fast=12, slow=26, signal=9, append=True); df.ta.bbands(length=20, std=2, append=True)
+                    # *** DEBUG: Print columns after bbands ***
+                    print(f"--- DataFrame columns after TA for {stock_symbol}: ---")
+                    print(df.columns)
+                    print("----------------------------------------------------")
+                    # *** DEBUG SONU ***
+                    last = df.iloc[-1]
+                    cp = last.get('Close'); sma20 = last.get('SMA_20'); rsi14 = last.get('RSI_14')
+                    macd = last.get('MACD_12_26_9'); macds = last.get('MACDs_12_26_9'); macdh = last.get('MACDh_12_26_9')
+                    bbl = last.get('BBL_20_2.0'); bbu = last.get('BBU_20_2.0'); bbm = last.get('BBM_20_2.0') # Check these names from print output
+                    if pd.notna(cp) and pd.notna(sma20): tech_indicators['sma'] = 'Above' if cp > sma20 else ('Below' if cp < sma20 else 'Equal')
+                    if pd.notna(rsi14): tech_indicators['rsi'] = 'Overbought' if rsi14 > 70 else ('Oversold' if rsi14 < 30 else 'Neutral')
+                    if pd.notna(macd) and pd.notna(macds): tech_indicators['macd'] = 'Buy Signal (Positive)' if macd > macds else 'Sell Signal (Negative)'
+                    if pd.notna(macdh): tech_indicators['macd_hist'] = float(round(macdh, 3))
+                    if pd.notna(cp) and pd.notna(bbl) and pd.notna(bbu): # Assign bbands status
+                        if cp < bbl: tech_indicators['bbands'] = 'Below Lower Band'
+                        elif cp > bbu: tech_indicators['bbands'] = 'Above Upper Band'
+                        else: tech_indicators['bbands'] = 'Inside Bands'
+                    else: logger.debug(f"BBands status N/A for {stock_symbol}: cp={cp}, bbl={bbl}, bbu={bbu}")
+                    if pd.notna(bbm): tech_indicators['bbands_mid'] = float(round(bbm, 2)) # Assign bbands_mid
+                    else: logger.debug(f"BBands mid N/A for {stock_symbol}: bbm={bbm}")
+                else: app.logger.warning(f"Insufficient data ({len(df)} rows) for full TA for {stock_symbol}"); flash(f"Limited data for {stock_symbol}, some indicators unavailable.", 'info')
+            else: app.logger.warning(f"DataFrame empty after cleaning for {stock_symbol}. Skipping TA.")
+        except Exception as ta_error: app.logger.error(f"Error calculating TA for {stock_symbol}: {ta_error}", exc_info=True); flash(f"Warning: Could not calculate TA indicators.", 'warning'); tech_indicators = {}
 
         # 3. Get News
         articles = cached_get_news(stock_symbol)
-        if isinstance(articles, dict) and articles.get('error'):
-            flash(f"Could not fetch news for {stock_symbol}: {articles['error']}", 'warning')
-            articles = []
-        elif not isinstance(articles, list):
-            flash(f"Received unexpected news format for {stock_symbol}.", 'warning')
-            articles = []
+        if isinstance(articles, dict) and articles.get('error'): flash(f"Could not fetch news: {articles['error']}", 'warning'); articles = []
+        elif not isinstance(articles, list): flash(f"Unexpected news format.", 'warning'); articles = []
 
-        # 4. Calculate Average Sentiment (if news available)
+        # 4. Calculate Average Sentiment
         sentiment_calculated = False
         if articles:
-            try:
-                avg_sentiment = sentiment.analyze_articles_sentiment(articles)
-                sentiment_calculated = True
-                app.logger.info(f"Average sentiment calculated for {stock_symbol}: {avg_sentiment:.4f}")
-            except Exception as sent_err:
-                 app.logger.error(f"Error calculating sentiment for {stock_symbol}: {sent_err}", exc_info=True)
-                 flash("Error during sentiment analysis.", "warning")
-                 # avg_sentiment remains 0.0
+            try: avg_sentiment = sentiment.analyze_articles_sentiment(articles); sentiment_calculated = True; app.logger.info(f"Avg sentiment for {stock_symbol}: {avg_sentiment:.4f}")
+            except Exception as sent_err: app.logger.error(f"Error calculating sentiment for {stock_symbol}: {sent_err}", exc_info=True); flash("Error during sentiment analysis.", "warning")
 
-        # 5. Make Decision (using combined indicators and sentiment)
-        try:
-            # Pass the calculated indicators and sentiment score
-            decision_result = decision.make_decision_with_indicators(tech_indicators, avg_sentiment)
-            app.logger.info(f"Combined decision for {stock_symbol}: {decision_result}")
-        except Exception as dec_err:
-            decision_result = "Decision Error"
-            app.logger.error(f"Error in combined decision logic for {stock_symbol}: {dec_err}", exc_info=True)
-            flash("Error during decision analysis.", "warning")
+        # 5. Make Decision (Combined)
+        try: decision_result = decision.make_decision_with_indicators(tech_indicators, avg_sentiment); app.logger.info(f"Combined decision for {stock_symbol}: {decision_result}")
+        except Exception as dec_err: decision_result = "Decision Error"; app.logger.error(f"Error in combined decision logic for {stock_symbol}: {dec_err}", exc_info=True); flash("Error during decision analysis.", "warning")
 
     # --- Handle Errors from Main Block ---
-    except ValueError as ve: # Catch errors raised from data fetching/validation
-        error_occurred = True
-        error_message = str(ve)
-        app.logger.error(f"Data fetching/validation error for {stock_symbol}: {error_message}")
-        flash(error_message, 'danger')
-        stock_data = None; articles = []; tech_indicators = {}; decision_result = "Error"
-    except Exception as e: # Catch all other unexpected errors
-        error_occurred = True
-        error_message = f"An unexpected server error occurred." # Generic message for user
-        app.logger.error(f"Unexpected error processing {stock_symbol}: {type(e).__name__} - {str(e)}", exc_info=True)
-        # Check specifically for Jinja errors during error handling itself
-        if isinstance(e, jinja2.exceptions.TemplateError):
-            error_message = f"Template rendering error." # More specific for template issues
-            app.logger.error(f"Jinja Template Error: {e.message} (Template: {getattr(e, 'filename', 'N/A')}, Line: {getattr(e, 'lineno', 'N/A')})")
-        flash(error_message, 'danger')
-        stock_data = None; articles = []; tech_indicators = {}; decision_result = "Error"
-
+    except ValueError as ve: error_occurred = True; error_message = str(ve); app.logger.error(f"Data error for {stock_symbol}: {error_message}"); flash(error_message, 'danger'); stock_data = None; articles = []; tech_indicators = {}; decision_result = "Error"
+    except Exception as e: error_occurred = True; error_message = f"An unexpected server error occurred."; app.logger.error(f"Unexpected error for {stock_symbol}: {type(e).__name__} - {str(e)}", exc_info=True); flash(error_message, 'danger'); stock_data = None; articles = []; tech_indicators = {}; decision_result = "Error"
 
     # --- Prepare Context and Render ---
-    # 'current_utc_time' is now defined above, before the try block
-    context = {
-        'stock': stock_symbol,
-        'stock_data': stock_data, # Will be None if error occurred
-        'articles': articles,
-        'error': error_occurred,
-        'error_message': error_message,
-        'decision': decision_result,
-        'tech_indicators': tech_indicators,
-        'current_time': current_utc_time # Pass the object (always defined)
-    }
+    context = { 'stock': stock_symbol, 'stock_data': stock_data, 'articles': articles, 'error': error_occurred, 'error_message': error_message, 'decision': decision_result, 'tech_indicators': tech_indicators, 'current_time': current_utc_time }
     return render_template('index.html', **context)
 
 
-# --- AJAX / Data Endpoints --- (Keep previous versions)
+# --- AJAX / Data Endpoints ---
 @app.route('/refresh_stock')
 def refresh_stock():
     stock = request.args.get("stock")
@@ -304,10 +236,10 @@ def get_forecast_data():
             elif "rate limit" in error_msg.lower(): status_code = 429
             return jsonify({'error': error_msg}), status_code
         else:
-            forecast_result['timestamp'] = datetime.utcnow().replace(tzinfo=pytz.utc).strftime('%Y-%m-%dT%H:%M:%S.000Z') # Use correct class
+            forecast_result['timestamp'] = datetime.utcnow().replace(tzinfo=pytz.utc).strftime('%Y-%m-%dT%H:%M:%S.000Z')
             cache.set(cache_key, forecast_result, timeout=3600); app.logger.info(f"Successfully generated forecast for {symbol}.")
             return jsonify(forecast_result)
-    except Exception as e: app.logger.error(f"Forecast endpoint error ({symbol}): {str(e)}", exc_info=True); return jsonify({'error': f"Server error while generating forecast for {symbol}."}), 500
+    except Exception as e: app.logger.error(f"Forecast endpoint error ({symbol}): {str(e)}", exc_info=True); return jsonify({'error': f"Server error generating forecast for {symbol}."}), 500
 
 @app.route('/clear_cache')
 def clear_cache_key():
@@ -320,7 +252,6 @@ def clear_cache_key():
             else: app.logger.warning(f"Cache key '{key}' not found for deletion."); return jsonify({"status": "warning", "message": f"Cache key '{key}' not found."}), 404
         except Exception as e: app.logger.error(f"Error deleting cache key '{key}': {e}", exc_info=True); return jsonify({"status": "error", "message": "Error clearing cache key."}), 500
     else: return jsonify({"status": "error", "message": "No cache key provided."}), 400
-
 
 # --- Main Execution Block ---
 if __name__ == '__main__':
