@@ -9,6 +9,7 @@ import pytz
 import requests
 import yfinance as yf
 from eventregistry import EventRegistry, QueryArticlesIter
+import numpy as np
 
 from config import (API_TIMEOUT, NEWSAPI_ENDPOINT, NEWSAPI_KEY,
                     YFINANCE_MIN_INTERVAL)
@@ -226,11 +227,8 @@ def get_news(stock: str, lang: str = 'en') -> list | dict:
         # Execute the query with a limited number of results
         articles_list = []
         try:
-            # Get up to 15 articles (değiştirildi: 20 → 15)
-            for article in q.execQuery(er, maxItems=15):
-                articles_list.append(article)
-            
-            articles = articles_list
+            # *** HABER LİMİTİ ARTIRILDI ***
+            articles = list(q.execQuery(er, sortBy="date", sortByAsc=False, maxItems=30)) # <-- 30 haber
             logger.info("Primary search found {} news articles for {}.".format(len(articles), stock))
         except Exception as query_err:
             logger.error("Error executing EventRegistry query: {}".format(query_err), exc_info=True)
@@ -247,7 +245,7 @@ def get_news(stock: str, lang: str = 'en') -> list | dict:
         try:
             rate_limit('newsapi')  # Apply rate limit again for fallback
             
-            # Build fallback query (general financial news without stock keyword)
+            # Build a more general financial news query
             fallback_query = {
                 "$query": {
                     "$and": [
@@ -266,16 +264,18 @@ def get_news(stock: str, lang: str = 'en') -> list | dict:
                 }
             }
             
-            logger.info("Attempting FALLBACK news search with EventRegistry query")
-            fallback_q = QueryArticlesIter.initWithComplexQuery(fallback_query)
+            logger.info("Attempting FALLBACK news search for {}".format(stock))
+            q_fallback = QueryArticlesIter.initWithComplexQuery(fallback_query)
             
-            # Execute the fallback query
-            fallback_articles = []
-            for article in fallback_q.execQuery(er, maxItems=15):
-                fallback_articles.append(article)
-            
-            articles = fallback_articles
-            logger.info("Fallback search found {} general news articles.".format(len(articles)))
+            # Execute fallback query
+            articles_fallback = []
+            try:
+                # *** FALLBACK LİMİTİ DE ARTIRILDI ***
+                articles = list(q_fallback.execQuery(er, sortBy="date", sortByAsc=False, maxItems=25)) # <-- 25 haber
+                logger.info("Fallback search found {} news articles.".format(len(articles)))
+            except Exception as fallback_err:
+                logger.error("Error executing fallback query: {}".format(fallback_err), exc_info=True)
+                return {'error': 'Error in fallback query: {}'.format(str(fallback_err))}
 
         except Exception as fb_e:
             logger.error("Error during fallback news search: {}".format(fb_e), exc_info=True)

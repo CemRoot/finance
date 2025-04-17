@@ -3,208 +3,188 @@ import pandas as pd
 import numpy as np
 from prophet import Prophet
 import yfinance as yf
-from datetime import datetime, timedelta  # Keep datetime class import
+from datetime import datetime, timedelta, date # Keep specific imports
 import pytz
 import time
-# Import renamed function
-from .newsapi import rate_limit, YFINANCE_MIN_INTERVAL  # Import rate_limit
+from .newsapi import rate_limit # Import rate_limit directly
 import logging
 import requests
+from random import uniform # Import uniform
 
+# Suppress Prophet/CmdStanPy logs
 logging.getLogger('prophet').setLevel(logging.WARNING)
 logging.getLogger('cmdstanpy').setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
-def get_prophet_forecast(stock_symbol, periods=30):
-    """Generates stock price forecast using Facebook Prophet library."""
+def get_prophet_forecast(stock_symbol: str, periods: int = 30, historical: bool = False, df: pd.DataFrame = None) -> dict:
+    """
+    Generates stock price forecast using Facebook Prophet library.
+    Includes logistic growth, error handling, and metrics calculation.
+
+    Args:
+        stock_symbol (str): The stock symbol (e.g., 'AAPL').
+        periods (int): Number of future days to forecast.
+        historical (bool): Whether to include historical predictions for existing data.
+        df (pd.DataFrame): Optional pre-loaded DataFrame (to avoid re-fetching data).
+
+    Returns:
+        dict: A dictionary containing forecast data and metrics, or an 'error' key on failure.
+    """
+    if not stock_symbol: logger.error("Forecast failed: Symbol empty."); return {'error': "Symbol cannot be empty."}
+    stock_symbol = stock_symbol.strip().upper(); logger.info(f"Starting Prophet forecast for {stock_symbol} ({periods} periods, historical={historical})")
+    error_return = { 'error': f"Forecast failed for {stock_symbol}", 'forecast_values': None, 'metrics': {'error': 'Forecast failed'}, 'last_actual_date': None, 'last_actual_price': None, 'execution_time': 0 }
+    
+    # Define minimum required rows here, so it's available for all code paths
+    min_required_rows = 20
+
     try:
-        # Using .format() for the initial log message
-        logger.info("Starting Prophet forecast for {} ({} periods)".format(stock_symbol, periods))
-
-        ticker = yf.Ticker(stock_symbol)
-        history = None
-        for period in ["2y", "1y", "6mo"]:
-            try:
-                # Using .format()
-                logger.info("Applying rate limit before fetching {} history for Prophet ({})".format(period, stock_symbol))
-                rate_limit('yfinance')
-                # Using .format()
-                logger.info("Fetching {} history for Prophet ({})".format(period, stock_symbol))
-                history = ticker.history(period=period, interval="1d", auto_adjust=True, repair=True, timeout=30)
-                history_len = len(history) if history is not None else 0
-                if history is not None and not history.empty and history_len >= 20:
-                    # Using .format()
-                    logger.info("Fetched {} data points ({}) for Prophet ({}).".format(history_len, period, stock_symbol))
-                    break
-                else:
-                    # Using .format()
-                    logger.warning("Insufficient data ({} rows) for '{}' for Prophet ({}). Trying next period.".format(history_len, period, stock_symbol))
-                    history = None
-            except requests.exceptions.HTTPError as http_err_hist:
-                status_code = http_err_hist.response.status_code if http_err_hist.response else 'Unknown'
-                # Using .format()
-                logger.error("Prophet history fetch ({}) failed for {} (HTTP {}): {}".format(period, stock_symbol, status_code, http_err_hist))
-                if status_code == 404:
-                    return {'error': f"Symbol '{stock_symbol}' not found (HTTP 404)."}
-            except Exception as e_hist:
-                err_type = type(e_hist).__name__
-                # Using .format()
-                logger.error("Error fetching {} history for Prophet ({}): {} - {}".format(period, stock_symbol, err_type, e_hist))
-                history = None
-            if history is None or history.empty:
-                time.sleep(0.5)
-
-        if history is None or history.empty:
-            # Using .format()
-            logger.error("Prophet forecast failed: Could not fetch sufficient history for {}.".format(stock_symbol))
-            return {'error': f"Could not retrieve enough historical data for '{stock_symbol}'."}
-
-        # Using .format()
-        logger.info("Preparing data for Prophet model ({}).".format(stock_symbol))
-        if isinstance(history.columns, pd.MultiIndex):
-            logger.warning("MultiIndex detected for {}. Flattening.".format(stock_symbol))
-            try:
-                history = history[['Open', 'High', 'Low', 'Close', 'Volume']]
-            except KeyError as multi_err:
-                cols_str = str(history.columns)
-                # Using .format()
-                logger.error("Could not select standard columns from MultiIndex for {}: {}. Columns: {}".format(stock_symbol, multi_err, cols_str))
-                return {'error': f"Unexpected data column structure for '{stock_symbol}'."}
-        if not isinstance(history.index, pd.DatetimeIndex):
-            history.index = pd.to_datetime(history.index, errors='coerce')
-            history = history[pd.notna(history.index)]
-        df = history.reset_index()
-        date_col_name = None
-        if 'Date' in df.columns:
-            date_col_name = 'Date'
-        elif 'Datetime' in df.columns:
-            date_col_name = 'Datetime'
-        elif 'index' in df.columns and pd.api.types.is_datetime64_any_dtype(df['index']):
-            date_col_name = 'index'
+        # Use provided dataframe if available
+        if df is not None and not df.empty:
+            history = df.copy()
+            logger.info(f"Using provided DataFrame with {len(history)} rows for {stock_symbol}")
+            # Ensure it has the required columns
+            if 'Close' not in history.columns or 'Date' not in history.columns:
+                logger.error(f"Provided DataFrame missing required columns for {stock_symbol}")
+                return {**error_return, 'error': "Provided DataFrame missing required columns (needs 'Date' and 'Close')"}
         else:
-            potential_date_col = df.columns[0]
-            if pd.api.types.is_datetime64_any_dtype(df[potential_date_col]):
-                date_col_name = potential_date_col
+            # Fetch data if not provided
+            ticker = yf.Ticker(stock_symbol); history = None; fetched_period = None
+            
+            for period in ["5y", "2y", "1y", "6mo"]:
+                try:
+                    logger.info(f"Rate limit check before fetching {period} history for {stock_symbol}"); rate_limit('yfinance')
+                    logger.info(f"Fetching {period} history for {stock_symbol}"); history = ticker.history(period=period, interval="1d", auto_adjust=True, repair=True, timeout=45)
+                    history_len = len(history) if history is not None else 0
+                    if history is not None and not history.empty and history_len >= min_required_rows: logger.info(f"Fetched {history_len} points ({period}) for {stock_symbol}."); fetched_period = period; break
+                    else: logger.warning(f"Insufficient data ({history_len}<{min_required_rows}) for '{period}' ({stock_symbol}). Trying next."); history = None
+                except requests.exceptions.HTTPError as http_err:
+                    status = http_err.response.status_code if http_err.response else 'Unknown'; logger.error(f"History fetch ({period}) failed ({stock_symbol}, HTTP {status}): {http_err}")
+                    if status == 404: logger.error(f"'{stock_symbol}' not found (404). Aborting forecast."); return {**error_return, 'error': f"Symbol '{stock_symbol}' not found."}
+                    history = None
+                except Exception as e_hist: logger.error(f"Error fetching {period} history ({stock_symbol}): {type(e_hist).__name__}", exc_info=False); history = None
+                if history is None or history.empty: time.sleep(uniform(0.3, 0.7))
 
-        df = df.rename(columns={date_col_name: 'ds', 'Close': 'y'})
-        try:
-            df['ds'] = pd.to_datetime(df['ds']).dt.tz_localize(None)
-        except Exception as date_err:
-            err_msg = str(date_err)
-            # Using .format()
-            logger.error("Error converting 'ds' to datetime for {}: {}".format(stock_symbol, err_msg))
-            return {'error': f"Error processing date format for '{stock_symbol}'."}
-        df['y'] = pd.to_numeric(df['y'], errors='coerce')
-        df['y'] = df['y'].ffill().bfill()
-        if df['y'].isnull().any():
-            # Using .format()
-            logger.error("Prophet forecast failed: 'y' column contains NaNs after fill for {}".format(stock_symbol))
-            return {'error': f"Price data gaps could not be filled for '{stock_symbol}'."}
+            if history is None or history.empty: logger.error(f"Failed: Could not fetch sufficient history ({min_required_rows}+ rows) for {stock_symbol}."); return {**error_return, 'error': f"Could not retrieve enough data for '{stock_symbol}'."}
 
-        df_len = len(df)
-        if df_len < 5:
-            # Using .format()
-            logger.error("Insufficient data ({} rows) after cleaning for {}".format(df_len, stock_symbol))
-            return {'error': f"Too few valid data points for '{stock_symbol}'."}
-        elif df_len < 20:
-            # Using .format()
-            logger.warning("Short data ({} rows) for {}. Forecast accuracy might be low.".format(df_len, stock_symbol))
+        logger.info(f"Preparing {len(history)} points for Prophet ({stock_symbol}).")
+        if isinstance(history.columns, pd.MultiIndex):
+            logger.warning(f"MultiIndex columns found for {stock_symbol}. Flattening.");
+            try: std_cols = ['Open', 'High', 'Low', 'Close', 'Volume']; avail = [c for c in std_cols if c in history.columns.get_level_values(0)]; history = history[avail]; history.columns = ['_'.join(col).strip('_') if isinstance(col, tuple) else col for col in history.columns.values]
+            except KeyError as e: logger.error(f"Failed to flatten MultiIndex: {e}"); return {**error_return, 'error': "Unexpected data structure."}
+        if not isinstance(history.index, pd.DatetimeIndex): history.index = pd.to_datetime(history.index, errors='coerce')
+        if history.index.tz is not None: history.index = history.index.tz_localize(None)
+        history = history[pd.notna(history.index)];
+        if history.empty: logger.error(f"DataFrame empty after date processing ({stock_symbol})"); return {**error_return, 'error': "Date processing error."}
+
+        df = history.reset_index(); date_col = next((c for c in ['Date', 'Datetime', 'index'] if c in df.columns and pd.api.types.is_datetime64_any_dtype(df[c])), None)
+        if not date_col: logger.error(f"Date column not found for {stock_symbol}"); return {**error_return, 'error': "Date column missing."}
+        df = df.rename(columns={date_col: 'ds', 'Close': 'y'}); df['y'] = pd.to_numeric(df['y'], errors='coerce'); df['y'] = df['y'].ffill().bfill()
+        if df['y'].isnull().any(): logger.error(f"NaNs in 'y' column after fill ({stock_symbol})"); return {**error_return, 'error': "Price data gaps."}
+        df_len = len(df);
+        if df_len < 5: logger.error(f"Insufficient data ({df_len}<5) after cleaning ({stock_symbol})"); return {**error_return, 'error': "Too few valid data points."}
+        elif df_len < min_required_rows: logger.warning(f"Using short data ({df_len} rows) for {stock_symbol}.")
         df_fit = df[['ds', 'y']].copy()
 
-        # Using .format()
-        logger.info("Initializing and fitting Prophet model for {}...".format(stock_symbol))
-        m = Prophet(yearly_seasonality='auto', weekly_seasonality='auto', daily_seasonality=False, seasonality_mode='multiplicative')
-        try:
-            m.fit(df_fit)
-        except Exception as fit_err:
-            logger.error(f"Prophet fitting failed for {stock_symbol}: {fit_err}", exc_info=True)
-            return {'error': f"Failed to train forecast model: {fit_err}"}
-        # Using .format()
-        logger.info("Prophet model fitted for {}.".format(stock_symbol))
+        logger.info(f"Initializing and fitting Prophet model (logistic) for {stock_symbol}...")
+        m = Prophet(growth='logistic', seasonality_mode='multiplicative', yearly_seasonality='auto', weekly_seasonality='auto', daily_seasonality=False)
+        df_fit['cap'] = df_fit['y'].max() * 1.5; df_fit['floor'] = df_fit['y'].min() * 0.7; df_fit['floor'] = df_fit['floor'].apply(lambda x: max(x, 0.01))
 
-        future = m.make_future_dataframe(periods=periods, freq='D')
-        # Using .format()
-        logger.info("Making future predictions for {}...".format(stock_symbol))
-        try:
-            forecast = m.predict(future)
-        except Exception as pred_err:
-            logger.error(f"Prophet prediction failed for {stock_symbol}: {pred_err}", exc_info=True)
-            return {'error': f"Failed to generate predictions: {pred_err}"}
-        # Using .format()
-        logger.info("Predictions generated for {}.".format(stock_symbol))
+        start_time = time.time()
+        try: m.fit(df_fit)
+        except Exception as fit_err: logger.error(f"Prophet fitting failed for {stock_symbol}: {fit_err}", exc_info=True); return {**error_return, 'error': f"Model training failed: {fit_err}"}
+        logger.info(f"Prophet model fitted for {stock_symbol}.")
 
-        # Using .format()
-        logger.info("Calculating forecast metrics for {}...".format(stock_symbol))
-        metrics = {}
-        trend_direction = 'Uncertain'
-        trend_strength = 0.0
-        seasonality_strength = 0.0
-        historical_volatility = None
-        confidence_interval_relative = 0.0
+        future = m.make_future_dataframe(periods=periods, freq='D'); future['cap'] = df_fit['cap'].iloc[-1]; future['floor'] = df_fit['floor'].iloc[-1]
+        logger.info(f"Making future predictions for {stock_symbol}...")
+        try: forecast = m.predict(future)
+        except Exception as pred_err: logger.error(f"Prophet prediction failed for {stock_symbol}: {pred_err}", exc_info=True); return {**error_return, 'error': f"Prediction failed: {pred_err}"}
+        execution_time = time.time() - start_time; logger.info(f"Predictions generated ({execution_time:.2f}s) for {stock_symbol}.")
+
+        logger.info(f"Calculating forecast metrics for {stock_symbol}...")
+        metrics = {}; trend_direction = 'Uncertain'; trend_strength = 0.0; seasonality_strength = 0.0; historical_volatility = None; confidence_interval_relative = 0.0
         try:
-            # ... (metric calculation logic remains the same) ...
-            trend_series = forecast['trend']
-            if len(trend_series) > 7:
-                trend_diff = trend_series.iloc[-1] - trend_series.iloc[-8]
-                last_trend_val = abs(trend_series.iloc[-1])
-                if last_trend_val > 1e-6 and pd.notna(trend_diff):
-                    trend_strength = abs(trend_diff / last_trend_val)
-                    if trend_diff > (0.001 * last_trend_val):
+            trend = forecast['trend']
+            # *** DÜZELTİLMİŞ BLOK ***
+            if len(trend) > 7:
+                last = trend.iloc[-1]
+                prev = trend.iloc[-8]
+                if abs(last) > 1e-6 and pd.notna(last) and pd.notna(prev):
+                    diff = last - prev
+                    trend_strength = abs(diff / last) # Standard division
+                    # Trend yönünü ayrı satırlarda belirle
+                    if diff > (0.005 * abs(last)):
                         trend_direction = 'Upward'
-                    elif trend_diff < (-0.001 * last_trend_val):
+                    elif diff < (-0.005 * abs(last)):
                         trend_direction = 'Downward'
                     else:
                         trend_direction = 'Sideways'
+            # *** DÜZELTME SONU ***
             metrics['trend_direction'] = trend_direction
             metrics['trend_strength'] = float(trend_strength) if pd.notna(trend_strength) else 0.0
-            total_seasonality_amplitude = 0
-            component_count = 0
-            for component in ['weekly', 'yearly']:
-                if component in forecast.columns and forecast[component].nunique() > 1:
-                    total_seasonality_amplitude += np.mean(np.abs(forecast[component]))
-                    component_count += 1
-            if component_count > 0:
-                trend_mean_abs = np.mean(np.abs(forecast['trend']))
-                if trend_mean_abs > 1e-6:
-                    seasonality_strength = total_seasonality_amplitude / trend_mean_abs
-            metrics['seasonality_strength'] = float(seasonality_strength) if pd.notna(seasonality_strength) else 0.0
-            if len(df) >= 5:
-                df['returns'] = df['y'].pct_change()
-                window_size = min(30, len(df)-1)
-                if window_size >= 2:
-                    rolling_std = df['returns'].rolling(window=window_size).std()
-                    last_valid_std = rolling_std.dropna().iloc[-1] if not rolling_std.dropna().empty else None
-                    if last_valid_std is not None:
-                        historical_volatility = last_valid_std * np.sqrt(252)
-            metrics['historical_volatility'] = float(historical_volatility) if pd.notna(historical_volatility) else None
-            last_forecast_point = forecast.iloc[-1]
-            last_yhat = last_forecast_point.get('yhat')
-            last_upper = last_forecast_point.get('yhat_upper')
-            last_lower = last_forecast_point.get('yhat_lower')
-            if all(pd.notna(v) for v in [last_yhat, last_upper, last_lower]) and abs(last_yhat) > 1e-6:
-                confidence_interval_width = last_upper - last_lower
-                confidence_interval_relative = confidence_interval_width / abs(last_yhat)
-            metrics['confidence_interval'] = float(confidence_interval_relative) if pd.notna(confidence_interval_relative) else 0.0
-        except Exception as metrics_err:
-            err_msg = str(metrics_err)
-            # Using .format()
-            logger.error("Error calculating forecast metrics for {}: {}".format(stock_symbol, err_msg), exc_info=True)
-            metrics = {'error': 'Failed to calculate metrics.'}
 
-        # Using .format()
-        logger.info("Formatting forecast results for {}.".format(stock_symbol))
-        forecast_output = forecast.tail(periods).copy()
+            seas_amp = 0; comp_count = 0; trend_mean = np.mean(np.abs(trend))
+            for comp in ['weekly', 'yearly']:
+                if comp in forecast.columns and forecast[comp].nunique() > 1:
+                    seas_amp += np.mean(np.abs(forecast[comp]))
+                    comp_count += 1
+            if comp_count > 0 and trend_mean > 1e-6:
+                seasonality_strength = seas_amp / trend_mean
+            metrics['seasonality_strength'] = float(seasonality_strength) if pd.notna(seasonality_strength) else 0.0
+
+            # Calculate historical volatility
+            if 'returns' not in df.columns and len(df) >= 2: # Ensure returns are calculated if missing
+                 df['returns'] = df['y'].pct_change()
+            if 'returns' in df.columns and len(df['returns'].dropna()) >= 5:
+                win = min(30, len(df) - 1)
+                if win >= 2:
+                    std = df['returns'].rolling(window=win).std()
+                    last_std = std.dropna().iloc[-1] if not std.dropna().empty else None
+                    if last_std:
+                        historical_volatility = last_std * np.sqrt(252)
+            metrics['historical_volatility'] = float(historical_volatility) if pd.notna(historical_volatility) else None
+
+            # Calculate confidence interval
+            last_fc = forecast.iloc[-1]
+            yhat = last_fc.get('yhat')
+            up = last_fc.get('yhat_upper')
+            low = last_fc.get('yhat_lower')
+            if all(pd.notna(v) for v in [yhat, up, low]) and abs(yhat) > 1e-6:
+                width = up - low
+                confidence_interval_relative = width / abs(yhat)
+            metrics['confidence_interval'] = float(confidence_interval_relative) if pd.notna(confidence_interval_relative) else 0.0
+
+        except Exception as metrics_err:
+            logger.error(f"Metrics calc error for {stock_symbol}: {metrics_err}", exc_info=True)
+            metrics = {'error': 'Metrics calculation failed.'} # Include error in metrics dict
+
+        logger.info(f"Formatting forecast results for {stock_symbol}. Metrics: {metrics}")
+        
+        # Future forecast (predictions after the last known date)
+        forecast_output = forecast[forecast['ds'] > df['ds'].max()].copy()
         forecast_output['ds'] = pd.to_datetime(forecast_output['ds'])
         output_dates = forecast_output['ds'].dt.strftime('%Y-%m-%d').tolist()
 
         def safe_float(v, dec=2):
-            try:
-                if pd.notna(v) and np.isfinite(v):
-                    return round(float(v), dec)
-                else:
-                    return None
-            except Exception:
-                return None
+            try: return round(float(v), dec) if pd.notna(v) and np.isfinite(v) else None
+            except (ValueError, TypeError): return None
+
+        last_actual = df.iloc[-1] if not df.empty else None
+        
+        # Include historical predictions if requested
+        historical_forecast_data = None
+        if historical:
+            # Include predictions for all historical dates
+            historical_output = forecast[forecast['ds'] <= df['ds'].max()].copy()
+            historical_output['ds'] = pd.to_datetime(historical_output['ds'])
+            
+            # Create dataframe with historical predictions
+            historical_forecast_data = {
+                'dates': historical_output['ds'].dt.strftime('%Y-%m-%d').tolist(),
+                'values': [safe_float(v) for v in historical_output['yhat']],
+                'upper_bound': [safe_float(v) for v in historical_output['yhat_upper']],
+                'lower_bound': [safe_float(v) for v in historical_output['yhat_lower']]
+            }
+            logger.info(f"Added {len(historical_output)} historical predictions for {stock_symbol}")
 
         result = {
             'forecast_values': {
@@ -214,24 +194,26 @@ def get_prophet_forecast(stock_symbol, periods=30):
                 'lower_bound': [safe_float(v) for v in forecast_output['yhat_lower']]
             },
             'metrics': metrics,
-            'last_actual_date': df['ds'].iloc[-1].strftime('%Y-%m-%d') if not df.empty else None,
-            'last_actual_price': safe_float(df['y'].iloc[-1]) if not df.empty else None,
-            'error': None
+            'last_actual_date': last_actual['ds'].strftime('%Y-%m-%d') if last_actual is not None else None,
+            'last_actual_price': safe_float(last_actual['y']) if last_actual is not None else None,
+            'execution_time': execution_time,
+            'error': None # Indicate success if we reached here
         }
+        
+        # Include historical forecast if requested
+        if historical_forecast_data:
+            result['historical_forecast'] = historical_forecast_data
+
         if None in result['forecast_values']['values']:
-            logger.warning(f"Forecast for {stock_symbol} contains None values.")  # f-string likely okay here
-        # Using .format()
-        logger.info("Prophet forecast successful for {}.".format(stock_symbol))
+            logger.warning(f"Forecast for {stock_symbol} contains None values (likely due to logistic cap/floor or model instability).")
+
+        logger.info(f"Prophet forecast successful for {stock_symbol}.")
         return result
-    except requests.exceptions.HTTPError as http_err:
-        status_code = http_err.response.status_code if http_err.response else 'Unknown'
-        logger.error(f"Prophet forecast failed (HTTP {status_code}): {http_err}")
-        error_msg = f"Failed data retrieval (HTTP {status_code})."
-        if status_code == 404:
-            error_msg = f"Symbol '{stock_symbol}' not found."
-        elif status_code == 429:
-            error_msg += " Rate limit likely exceeded."
-        return {'error': error_msg}
+
     except Exception as e:
-        logger.error(f"Prophet forecast failed: {type(e).__name__} - {str(e)}", exc_info=True)
-        return {'error': f"Unexpected error generating forecast: {type(e).__name__}"}
+        logger.error(f"Prophet forecast failed unexpectedly for {stock_symbol}: {type(e).__name__}", exc_info=True)
+        # Return consistent error structure
+        return {
+            **error_return, # Use the predefined error structure
+            'error': f"Unexpected error: {type(e).__name__}"
+        }
