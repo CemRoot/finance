@@ -155,15 +155,13 @@ def index():
                 if len(df) >= min_rows_for_full_ta:
                     df.ta.sma(length=20, append=True); df.ta.rsi(length=14, append=True)
                     df.ta.macd(fast=12, slow=26, signal=9, append=True); df.ta.bbands(length=20, std=2, append=True)
-                    # *** DEBUG: Print columns after bbands ***
-                    print(f"--- DataFrame columns after TA for {stock_symbol}: ---")
-                    print(df.columns)
-                    print("----------------------------------------------------")
-                    # *** DEBUG SONU ***
+                    # Debug print kaldırıldı, sütun adlarının doğru olduğu varsayıldı
                     last = df.iloc[-1]
                     cp = last.get('Close'); sma20 = last.get('SMA_20'); rsi14 = last.get('RSI_14')
                     macd = last.get('MACD_12_26_9'); macds = last.get('MACDs_12_26_9'); macdh = last.get('MACDh_12_26_9')
-                    bbl = last.get('BBL_20_2.0'); bbu = last.get('BBU_20_2.0'); bbm = last.get('BBM_20_2.0') # Check these names from print output
+                    # *** DÜZELTME: Doğru Bollinger Bant sütun adlarını kullan ***
+                    bbl = last.get('BBL_20_2'); bbu = last.get('BBU_20_2'); bbm = last.get('BBM_20_2')
+                    # *** DÜZELTME SONU ***
                     if pd.notna(cp) and pd.notna(sma20): tech_indicators['sma'] = 'Above' if cp > sma20 else ('Below' if cp < sma20 else 'Equal')
                     if pd.notna(rsi14): tech_indicators['rsi'] = 'Overbought' if rsi14 > 70 else ('Oversold' if rsi14 < 30 else 'Neutral')
                     if pd.notna(macd) and pd.notna(macds): tech_indicators['macd'] = 'Buy Signal (Positive)' if macd > macds else 'Sell Signal (Negative)'
@@ -172,31 +170,52 @@ def index():
                         if cp < bbl: tech_indicators['bbands'] = 'Below Lower Band'
                         elif cp > bbu: tech_indicators['bbands'] = 'Above Upper Band'
                         else: tech_indicators['bbands'] = 'Inside Bands'
-                    else: logger.debug(f"BBands status N/A for {stock_symbol}: cp={cp}, bbl={bbl}, bbu={bbu}")
+                    # *** DÜZELTME: Hatalı logger çağrısı kaldırıldı ***
+                    # else: app.logger.debug(...) # Kaldırıldı veya app.logger ile düzeltildi
                     if pd.notna(bbm): tech_indicators['bbands_mid'] = float(round(bbm, 2)) # Assign bbands_mid
-                    else: logger.debug(f"BBands mid N/A for {stock_symbol}: bbm={bbm}")
+                    # else: app.logger.debug(...) # Kaldırıldı veya app.logger ile düzeltildi
                 else: app.logger.warning(f"Insufficient data ({len(df)} rows) for full TA for {stock_symbol}"); flash(f"Limited data for {stock_symbol}, some indicators unavailable.", 'info')
             else: app.logger.warning(f"DataFrame empty after cleaning for {stock_symbol}. Skipping TA.")
-        except Exception as ta_error: app.logger.error(f"Error calculating TA for {stock_symbol}: {ta_error}", exc_info=True); flash(f"Warning: Could not calculate TA indicators.", 'warning'); tech_indicators = {}
+        # *** Granular except block for TA errors ***
+        except Exception as ta_error:
+             # Log the error with app.logger
+             app.logger.error(f"Error calculating TA for {stock_symbol}: {ta_error}", exc_info=True)
+             # Flash a user-friendly warning
+             flash(f"Warning: Could not calculate technical indicators.", 'warning')
+             # Reset tech_indicators to ensure it's empty, preventing partial data issues
+             tech_indicators = {}
 
-        # 3. Get News
+        # 3. Get News (Continues even if TA fails)
         articles = cached_get_news(stock_symbol)
         if isinstance(articles, dict) and articles.get('error'): flash(f"Could not fetch news: {articles['error']}", 'warning'); articles = []
         elif not isinstance(articles, list): flash(f"Unexpected news format.", 'warning'); articles = []
 
-        # 4. Calculate Average Sentiment
+        # 4. Calculate Average Sentiment (Continues even if TA fails)
         sentiment_calculated = False
         if articles:
             try: avg_sentiment = sentiment.analyze_articles_sentiment(articles); sentiment_calculated = True; app.logger.info(f"Avg sentiment for {stock_symbol}: {avg_sentiment:.4f}")
             except Exception as sent_err: app.logger.error(f"Error calculating sentiment for {stock_symbol}: {sent_err}", exc_info=True); flash("Error during sentiment analysis.", "warning")
 
-        # 5. Make Decision (Combined)
-        try: decision_result = decision.make_decision_with_indicators(tech_indicators, avg_sentiment); app.logger.info(f"Combined decision for {stock_symbol}: {decision_result}")
-        except Exception as dec_err: decision_result = "Decision Error"; app.logger.error(f"Error in combined decision logic for {stock_symbol}: {dec_err}", exc_info=True); flash("Error during decision analysis.", "warning")
+        # 5. Make Decision (Uses whatever indicators and sentiment are available)
+        try:
+            # decision function should handle potentially empty tech_indicators dict
+            decision_result = decision.make_decision_with_indicators(tech_indicators, avg_sentiment)
+            app.logger.info(f"Combined decision for {stock_symbol}: {decision_result}")
+        except Exception as dec_err:
+            decision_result = "Decision Error"
+            app.logger.error(f"Error in combined decision logic for {stock_symbol}: {dec_err}", exc_info=True)
+            flash("Error during decision analysis.", "warning")
 
-    # --- Handle Errors from Main Block ---
-    except ValueError as ve: error_occurred = True; error_message = str(ve); app.logger.error(f"Data error for {stock_symbol}: {error_message}"); flash(error_message, 'danger'); stock_data = None; articles = []; tech_indicators = {}; decision_result = "Error"
-    except Exception as e: error_occurred = True; error_message = f"An unexpected server error occurred."; app.logger.error(f"Unexpected error for {stock_symbol}: {type(e).__name__} - {str(e)}", exc_info=True); flash(error_message, 'danger'); stock_data = None; articles = []; tech_indicators = {}; decision_result = "Error"
+    # --- Handle Errors from Main Data Fetching/Validation Block ---
+    except ValueError as ve:
+        error_occurred = True; error_message = str(ve)
+        app.logger.error(f"Data fetching/validation error for {stock_symbol}: {error_message}")
+        flash(error_message, 'danger'); stock_data = None; articles = []; tech_indicators = {}; decision_result = "Error"
+    except Exception as e: # Catch-all for other unexpected errors
+        error_occurred = True; error_message = f"An unexpected server error occurred."
+        app.logger.error(f"Unexpected error processing {stock_symbol}: {type(e).__name__} - {str(e)}", exc_info=True)
+        if isinstance(e, jinja2.exceptions.TemplateError): error_message = f"Template rendering error."; app.logger.error(f"Jinja Error: {e.message} (Template: {getattr(e, 'filename', 'N/A')}, Line: {getattr(e, 'lineno', 'N/A')})")
+        flash(error_message, 'danger'); stock_data = None; articles = []; tech_indicators = {}; decision_result = "Error"
 
     # --- Prepare Context and Render ---
     context = { 'stock': stock_symbol, 'stock_data': stock_data, 'articles': articles, 'error': error_occurred, 'error_message': error_message, 'decision': decision_result, 'tech_indicators': tech_indicators, 'current_time': current_utc_time }
@@ -206,6 +225,7 @@ def index():
 # --- AJAX / Data Endpoints ---
 @app.route('/refresh_stock')
 def refresh_stock():
+    # ... (Endpoint code remains the same) ...
     stock = request.args.get("stock")
     if not stock: return jsonify({"status": "error", "message": "Stock symbol is required"}), 400
     app.logger.info(f"AJAX request to REFRESH stock data for: {stock}")
@@ -222,6 +242,7 @@ def refresh_stock():
 
 @app.route('/get_forecast_data', methods=['GET'])
 def get_forecast_data():
+    # ... (Endpoint code remains the same) ...
     symbol = request.args.get('symbol')
     if not symbol: return jsonify({'error': 'Stock symbol is required.'}), 400
     cache_key = f"forecast_{symbol}"; cached_result = cache.get(cache_key)
@@ -243,6 +264,7 @@ def get_forecast_data():
 
 @app.route('/clear_cache')
 def clear_cache_key():
+    # ... (Endpoint code remains the same) ...
     key = request.args.get('key')
     if key:
         try:
@@ -252,6 +274,7 @@ def clear_cache_key():
             else: app.logger.warning(f"Cache key '{key}' not found for deletion."); return jsonify({"status": "warning", "message": f"Cache key '{key}' not found."}), 404
         except Exception as e: app.logger.error(f"Error deleting cache key '{key}': {e}", exc_info=True); return jsonify({"status": "error", "message": "Error clearing cache key."}), 500
     else: return jsonify({"status": "error", "message": "No cache key provided."}), 400
+
 
 # --- Main Execution Block ---
 if __name__ == '__main__':
