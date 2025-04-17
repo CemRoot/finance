@@ -1,4 +1,4 @@
-```markdown
+
 # Financial Analysis Dashboard
 
 ## Overview
