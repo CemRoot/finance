@@ -16,6 +16,7 @@ import pandas as pd
 import numpy as np
 import pandas_ta as ta # Technical Analysis library
 import jinja2 # Import jinja2 for exception handling
+import yfinance as yf # For direct ticker info access
 
 # Flask Application and Cache Configuration
 app = Flask(__name__)
@@ -23,6 +24,55 @@ app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'dev-secret-key-should-be-ch
 cache_config = { "CACHE_TYPE": "SimpleCache", "CACHE_DEFAULT_TIMEOUT": 300 }
 cache = Cache(config=cache_config)
 cache.init_app(app)
+
+# --- Popular stock symbols with associated name fragments for lookup ---
+POPULAR_SYMBOLS_FOR_NAME_LOOKUP = {
+    "AAPL": ["apple"],
+    "MSFT": ["microsoft"],
+    "GOOG": ["google", "alphabet"],
+    "GOOGL": ["google", "alphabet"],
+    "AMZN": ["amazon"],
+    "TSLA": ["tesla"],
+    "META": ["meta", "facebook"],
+    "NVDA": ["nvidia"],
+    "JPM": ["jpmorgan", "jp morgan"],
+    "BAC": ["bank of america", "bofa"],
+    "WFC": ["wells fargo"],
+    "C": ["citigroup", "citi"],
+    "PFE": ["pfizer"],
+    "JNJ": ["johnson", "johnson & johnson"],
+    "UNH": ["unitedhealth", "united health"],
+    "HD": ["home depot"],
+    "PG": ["procter", "gamble", "procter & gamble"],
+    "XOM": ["exxon", "exxonmobil"],
+    "CVX": ["chevron"],
+    "KO": ["coca", "coca-cola", "coca cola"],
+    "PEP": ["pepsi", "pepsico"],
+    "T": ["at&t", "at and t"],
+    "VZ": ["verizon"],
+    "DIS": ["disney", "walt disney"],
+    "NFLX": ["netflix"],
+    "INTC": ["intel"],
+    "AMD": ["amd", "advanced micro devices"],
+    "CSCO": ["cisco"],
+    "IBM": ["ibm", "international business machines"],
+    "ORCL": ["oracle"],
+    "CRM": ["salesforce"],
+    "ADBE": ["adobe"],
+    "PYPL": ["paypal"],
+    "V": ["visa"],
+    "MA": ["mastercard"],
+    "WMT": ["walmart", "wal-mart"],
+    "TGT": ["target"],
+    "COST": ["costco"],
+    "SBUX": ["starbucks"],
+    "MCD": ["mcdonald", "mcdonalds", "mcdonald's"],
+    "BABA": ["alibaba"],
+    "GM": ["general motors"],
+    "F": ["ford"],
+    "GE": ["general electric"],
+    "BA": ["boeing"]
+}
 
 # Logging Setup
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
@@ -44,6 +94,34 @@ def cached_get_stock_data(symbol):
 def cached_get_news(symbol):
     app.logger.info(f"CACHE MISS or expired for get_news({symbol}). Calling API.")
     return newsapi.get_news(symbol, lang='en')
+
+@cache.memoize(timeout=3600)  # Cache company names for 1 hour
+def cached_get_ticker_info(symbol):
+    """
+    Get and cache only the company name info for a ticker symbol.
+    This is a lightweight alternative to getting all stock data.
+    
+    Args:
+        symbol (str): Stock symbol to lookup
+        
+    Returns:
+        dict: Dictionary with shortName and longName (if available)
+    """
+    app.logger.info(f"CACHE MISS or expired for ticker_info({symbol}). Fetching company info.")
+    try:
+        ticker = yf.Ticker(symbol)
+        info = ticker.info
+        
+        # Extract only the company name information to save cache space
+        name_info = {
+            'shortName': info.get('shortName', ''),
+            'longName': info.get('longName', ''),
+            'symbol': symbol
+        }
+        return name_info
+    except Exception as e:
+        app.logger.warning(f"Error fetching ticker info for {symbol}: {str(e)}")
+        return {'shortName': '', 'longName': '', 'symbol': symbol}
 
 # --- Jinja2 Filters ---
 @app.template_filter('calculate_average')
@@ -98,7 +176,7 @@ app.jinja_env.filters['safe_sum'] = safe_sum
 app.jinja_env.filters['variance'] = calculate_variance
 app.jinja_env.filters['format_number'] = format_number
 app.jinja_env.filters['format_date'] = format_date
-app.jinja_env.globals.update(abs=abs, len=len, isinstance=isinstance, float=float, int=int, str=str, list=list, dict=dict, datetime=datetime, max=max, min=min, round=round)
+app.jinja_env.globals.update(abs=abs, len=len, isinstance=isinstance, float=float, int=int, str=str, list=list, dict=dict, datetime=datetime, max=max, min=min, round=round, now=lambda: datetime.now(pytz.utc))
 
 # --- Main Route ---
 @app.route('/', methods=['GET', 'POST'])
@@ -107,18 +185,68 @@ def index():
 
     # --- Handle POST request (Search) ---
     if request.method == 'POST':
-        stock_symbol_form = request.form.get('stock', '').strip().upper()
-        if not stock_symbol_form:
-            flash('Please enter a valid stock symbol.', 'warning')
+        search_query = request.form.get('stock', '').strip()
+        if not search_query:
+            flash('Please enter a valid stock symbol or company name.', 'warning')
             return redirect(url_for('index'))
+        
+        # Convert to uppercase for symbol checking
+        stock_symbol_candidate = search_query.upper()
+        
+        # Check if it looks like a stock symbol (all caps, short)
+        is_likely_symbol = (stock_symbol_candidate.isalpha() or 
+                           (stock_symbol_candidate.isalnum() and not stock_symbol_candidate.isdigit())) and \
+                           len(stock_symbol_candidate) <= 5
+        
+        resolved_symbol = None
+        
+        if is_likely_symbol:
+            # It looks like a symbol, try to use it directly
+            app.logger.info(f"Search query '{search_query}' appears to be a stock symbol.")
+            resolved_symbol = stock_symbol_candidate
         else:
-            session['last_symbol'] = stock_symbol_form
-            app.logger.info(f"POST request for {stock_symbol_form}. Redirecting to GET after clearing cache.")
-            cache_key_data = f"cached_get_stock_data_{stock_symbol_form}"
-            cache_key_news = f"cached_get_news_{stock_symbol_form}"
-            cache_key_forecast = f"forecast_{stock_symbol_form}"
-            cache.delete(cache_key_data); cache.delete(cache_key_news); cache.delete(cache_key_forecast)
-            return redirect(url_for('index', stock=stock_symbol_form))
+            # It might be a company name, try to match with our popular symbols
+            app.logger.info(f"Search query '{search_query}' appears to be a company name. Attempting to match...")
+            search_query_lower = search_query.lower()
+            
+            # First check our dictionary with name fragments
+            for symbol, name_fragments in POPULAR_SYMBOLS_FOR_NAME_LOOKUP.items():
+                if any(fragment in search_query_lower for fragment in name_fragments):
+                    app.logger.info(f"Found matching symbol {symbol} for '{search_query}' using name fragment list")
+                    resolved_symbol = symbol
+                    break
+                    
+            # If not found in fragments list, try full company name lookup
+            if not resolved_symbol:
+                for symbol in POPULAR_SYMBOLS_FOR_NAME_LOOKUP.keys():
+                    ticker_info = cached_get_ticker_info(symbol)
+                    
+                    # Check if either shortName or longName contains the search query
+                    short_name = ticker_info.get('shortName', '').lower()
+                    long_name = ticker_info.get('longName', '').lower() 
+                    
+                    if search_query_lower in short_name or search_query_lower in long_name:
+                        app.logger.info(f"Found matching symbol {symbol} for '{search_query}' in company name")
+                        resolved_symbol = symbol
+                        break
+        
+        if not resolved_symbol:
+            flash(f"No valid stock symbol found for '{search_query}'. Please try using the exact symbol or another company name.", 'warning')
+            return redirect(url_for('index'))
+
+        # We have a valid symbol, store it and redirect
+        session['last_symbol'] = resolved_symbol
+        app.logger.info(f"Search query '{search_query}' resolved to symbol '{resolved_symbol}'. Redirecting after clearing cache.")
+        
+        # Clear cache for this symbol to ensure fresh data
+        cache_key_data = f"cached_get_stock_data_{resolved_symbol}"
+        cache_key_news = f"cached_get_news_{resolved_symbol}"
+        cache_key_forecast = f"forecast_{resolved_symbol}"
+        cache.delete(cache_key_data)
+        cache.delete(cache_key_news)
+        cache.delete(cache_key_forecast)
+        
+        return redirect(url_for('index', stock=resolved_symbol))
 
     # --- Process GET request ---
     stock_symbol_arg = request.args.get('stock')

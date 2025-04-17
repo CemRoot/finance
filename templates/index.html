@@ -67,6 +67,15 @@ Financial Analysis Dashboard {% if stock %}- {{ stock }}{% endif %}
 {# No stock symbol selected, show the welcome screen #}
 {% include 'partials/_welcome.html' %}
 {% endif %} {# End if stock #}
+
+<form method="post" action="{{ url_for('index') }}" class="form-inline my-2 my-lg-0">
+    <div class="input-group">
+        <input type="text" class="form-control" name="stock" placeholder="Enter company name or symbol (e.g., Apple, AAPL)" required>
+        <div class="input-group-append">
+            <button class="btn btn-primary" type="submit">Search</button>
+        </div>
+    </div>
+</form>
 {% endblock %}
 
 {% block scripts %}

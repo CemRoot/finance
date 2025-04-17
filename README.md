@@ -1,121 +1,123 @@
+# Finance Analysis Dashboard
 
-# Financial Analysis Dashboard
-
-## Overview
-
-This web application provides a dashboard for financial analysis, forecasting, and news aggregation for specific stock symbols. It allows users to:
-
-*   View historical stock price data (OHLCV) with interactive charts (Candlestick and Line).
-*   Analyze recent news articles related to a stock symbol.
-*   View sentiment analysis scores derived from news headlines and descriptions using FinBERT.
-*   Receive a simple trading decision suggestion (Buy/Sell/Hold) based on news sentiment and/or technical indicators.
-*   View short-term price forecasts generated using the Prophet library.
-*   Examine basic technical indicators (SMA, RSI, MACD, Bollinger Bands, Volatility).
+A web application that allows users to analyze financial data, news, and forecasts for stocks. The application provides detailed information, technical indicators, and news articles for a given stock symbol or company name.
 
 ## Features
 
-*   **Stock Data Visualization:** Interactive Candlestick and Line charts using Chart.js. Displays Open, High, Low, Close, and Volume.
-*   **News Aggregation:** Fetches latest news articles relevant to the selected stock symbol using the EventRegistry API.
-*   **Sentiment Analysis:** Analyzes news sentiment using the `ProsusAI/finbert` model via the Hugging Face `transformers` library. Calculates an average sentiment score.
-*   **Trading Decision Support:** Provides a 'Buy', 'Sell', or 'Hold' suggestion based on configurable logic (currently combines news sentiment and technical indicators).
-*   **Time Series Forecasting:** Uses Facebook Prophet to forecast future stock prices (next 30 days).
-*   **Technical Indicators:** Calculates and displays SMA, RSI, MACD, Bollinger Bands, and Annualized Volatility using `pandas-ta`.
-*   **Caching:** Uses Flask-Caching to cache results from external APIs (yfinance, EventRegistry, Prophet forecast) to improve performance and reduce API calls.
-*   **Responsive Design:** Basic responsiveness using Bootstrap 5 for usability on different screen sizes.
+- **Company Name Search**: Search for stocks using either the ticker symbol (e.g., AAPL) or the company name (e.g., Apple)
+- **Stock Data Visualization**: View historical price charts with candlestick data
+- **Technical Indicators**: Analyze stocks using various technical indicators including:
+  - Simple Moving Average (SMA)
+  - Relative Strength Index (RSI)
+  - Moving Average Convergence Divergence (MACD)
+  - Bollinger Bands
+  - Volatility
+- **News Integration**: Get the latest news related to specific stocks
+- **Sentiment Analysis**: Analyze the sentiment of news articles
+- **Market Decision Support**: Get automated trading signals based on technical indicators
+- **Forecasting**: View price forecasts using time series analysis
 
-## Project Structure
+## Installation
 
-```
-├── app.py                    # Main Flask application logic, routes
-├── config.py                 # Configuration (API keys, constants)
-├── requirements.txt          # Python package dependencies
-├── README.md                 # This file
-├── .env.example              # Example environment variables file
-├── src/                      # Source code modules directory
-│   ├── __init__.py           # Makes 'src' a Python package
-│   ├── decision.py           # Logic for generating Buy/Sell/Hold decision
-│   ├── forecasting.py        # Prophet forecasting logic
-│   ├── newsapi.py            # Functions for fetching stock data (yfinance) and news (EventRegistry)
-│   └── sentiment.py          # FinBERT sentiment analysis logic
-├── static/                   # Static files (CSS, JavaScript, Images)
-│   ├── css/
-│   │   └── style.css         # Custom stylesheets
-│   └── js/
-│       ├── forecast.js       # JS for forecast tab (Plotly charts, AJAX)
-│       ├── main.js           # General JS (sidebar interaction, helpers)
-│       ├── script.js         # JS for overview tab (Chart.js charts, AJAX refresh)
-│       └── stock-data-loader.js # Helper JS for initializing data from Flask
-└── templates/                # HTML templates (Jinja2)
-    ├── base.html             # Base HTML structure, includes CSS/JS libraries
-    ├── index.html            # Main page, contains welcome screen or dashboard content
-    ├── partials/             # Reusable template snippets
-    │   ├── _dashboard_header.html # Header shown when stock is selected
-    │   ├── _flash_messages.html # Renders flashed messages
-    │   ├── _sidebar.html       # Left sidebar navigation and search
-    │   └── _welcome.html     # Content shown when no stock is selected
-    └── tabs/                 # Templates for individual dashboard tabs
-        ├── details.html      # Placeholder (content moved to overview)
-        ├── forecast.html     # Structure for forecast tab
-        ├── news.html         # Structure for news tab
-        └── overview.html     # Structure for overview tab (charts, indicators)
+1. Clone the repository:
+   ```
+   git clone <repository-url>
+   cd Finance
+   ```
 
-```
+2. Create a virtual environment and activate it:
+   ```
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
 
-## Setup and Installation
+3. Install the required packages:
+   ```
+   pip install -r requirements.txt
+   ```
 
-1.  **Clone the Repository:**
-    ```bash
-    git clone <your-repository-url>
-    cd Finance
-    ```
+4. Set environment variables:
+   ```
+   export EVENTREGISTRY_API_KEY=your_api_key  # On Windows: set EVENTREGISTRY_API_KEY=your_api_key
+   export FLASK_DEBUG=true  # For development
+   ```
 
-2.  **Create and Activate a Virtual Environment:**
-    ```bash
-    # Linux/macOS
-    python3 -m venv venv
-    source venv/bin/activate
+5. Run the application:
+   ```
+   python app.py
+   ```
 
-    # Windows
-    python -m venv venv
-    .\venv\Scripts\activate
-    ```
-
-3.  **Install Dependencies:**
-    ```bash
-    pip install -r requirements.txt
-    ```
-    *Note: Installing `torch` and `cmdstanpy` might take some time.*
-
-4.  **Configure API Keys (Optional but Recommended):**
-    *   Rename `.env.example` to `.env`.
-    *   Edit the `.env` file and add your EventRegistry API key:
-        ```dotenv
-        EVENTREGISTRY_API_KEY=your_actual_api_key_here
-        # FLASK_SECRET_KEY=a_strong_random_secret_key # Optional: Set a secret key
-        ```
-    *   The application will read this key using `python-dotenv`. If not set, it falls back to the default in `config.py`.
-
-5.  **Run the Application:**
-    ```bash
-    python app.py --port 5001 # Or any port you prefer
-    ```
-    *   The app will be accessible at `http://127.0.0.1:5001` (or the host/port you specify).
-    *   Use `--host 0.0.0.0` to make it accessible on your local network.
+6. Open your browser and go to:
+   ```
+   http://localhost:5000
+   ```
 
 ## Usage
 
-*   Open the application URL in your web browser.
-*   Use the search bar in the sidebar to enter a stock symbol (e.g., `AAPL`, `GOOGL`, `MSFT`, `TSLA`, `THYAO.IS`).
-*   Alternatively, click on one of the popular symbols on the welcome screen.
-*   Navigate through the tabs (Overview, News, Forecast) to view different analyses.
-*   Use the refresh buttons within the charts/sections to update data without a full page reload.
+### Searching for Stocks
 
-## Future Enhancements (Ideas)
+The application supports two ways to search for stocks:
 
-*   More advanced technical indicators and charting features.
-*   User accounts and watchlists.
-*   Backtesting integration for decision strategies.
-*   More sophisticated forecasting models (e.g., LSTM, ARIMA).
-*   Improved error handling and user feedback.
-*   Internationalization/Localization support.
-*   Dockerization for easier deployment.
+1. **Using Stock Symbols**: Enter a ticker symbol like "AAPL" for Apple, "MSFT" for Microsoft, etc.
+2. **Using Company Names**: Enter a company name like "Apple", "Microsoft", "Coca Cola", etc.
+
+The application will automatically determine if you've entered a company name or a stock symbol and will resolve it to the appropriate ticker symbol.
+
+### Popular Stocks
+
+For quick access, you can click on any of the popular stock buttons on the home page:
+
+- US Stocks: AAPL, MSFT, GOOGL, AMZN, TSLA, NVDA
+- Turkey Stocks: THYAO.IS, GARAN.IS, BIMAS.IS, ASELS.IS
+
+### Dashboard Tabs
+
+The dashboard provides several tabs for analyzing stocks:
+
+1. **Overview**: Shows the stock price chart, current price, and basic market data
+2. **News**: Displays recent news articles related to the stock
+3. **Details**: Shows additional details about the stock
+4. **Forecasting**: Provides price forecasts based on historical data
+
+## Technical Implementation Details
+
+### Company Name Search
+
+The application maintains a dictionary of popular stock symbols with associated name fragments for lookup. When a user enters a search query, the application:
+
+1. Checks if the input looks like a stock symbol (uppercase, 1-5 characters)
+2. If not, it tries to match the input against company names in the dictionary
+3. If a match is found, it retrieves the corresponding stock symbol
+4. If no match is found in the dictionary, it tries to use yfinance to look up the company name
+
+This functionality is implemented in the `index` route in `app.py`.
+
+### Data Caching
+
+To improve performance and reduce API calls, the application implements caching for:
+
+- Stock data
+- News articles
+- Company information
+- Forecasting data
+
+## API Integrations
+
+The application uses the following APIs:
+
+- **yfinance**: Used for fetching historical stock data and company information
+- **EventRegistry**: Used for fetching news articles related to stocks
+
+## Known Issues and Limitations
+
+- The EventRegistry API requires a valid API key to fetch news articles
+- Some stocks may not have sufficient news coverage
+- Search by company name works best with well-known companies in the predefined dictionary
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.

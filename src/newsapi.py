@@ -8,6 +8,7 @@ import pandas as pd
 import pytz
 import requests
 import yfinance as yf
+from eventregistry import EventRegistry, QueryArticlesIter
 
 from config import (API_TIMEOUT, NEWSAPI_ENDPOINT, NEWSAPI_KEY,
                     YFINANCE_MIN_INTERVAL)
@@ -27,7 +28,10 @@ LAST_NEWSAPI_REQUEST_TIME = 0
 FALLBACK_SOURCE_URIS = [
     "reuters.com", "bloomberg.com", "apnews.com", "cnbc.com",
     "marketwatch.com", "investing.com", "finance.yahoo.com",
-    "wsj.com", "ft.com", "nytimes.com"
+    "wsj.com", "ft.com", "nytimes.com", 
+    "barrons.com", "thestreet.com", "fool.com", "seekingalpha.com",
+    "forbes.com", "businessinsider.com", "money.cnn.com", "morningstar.com",
+    "economist.com", "zacks.com"
 ]
 
 # --- Helper Functions ---
@@ -165,13 +169,12 @@ def _process_articles(articles: list, stock_symbol: str, is_fallback: bool) -> l
 
 def get_news(stock: str, lang: str = 'en') -> list | dict:
     """
-    Fetches news using the EventRegistry API.
-    If no stock-specific news is found, falls back to fetching general news
-    from predefined reliable sources.
+    Fetches news using the EventRegistry API with a complex query tailored for stocks.
+    If no stock-specific news is found, falls back to fetching general financial news.
 
     Args:
         stock (str): The stock symbol (e.g., 'AAPL').
-        lang (str): Language code (e.g., 'en').
+        lang (str): Language code (e.g., 'en' for English).
 
     Returns:
         list | dict: A list of processed articles, or a dictionary with an 'error' key on failure.
@@ -182,103 +185,97 @@ def get_news(stock: str, lang: str = 'en') -> list | dict:
 
     articles = []
     is_fallback = False
+    language_code = 'eng' if lang == 'en' else lang  # EventRegistry uses 'eng' rather than 'en'
 
     # --- Step 1: Attempt Primary Search for Stock-Specific News ---
     try:
         rate_limit('newsapi')
-        primary_params = {
-            'apiKey': NEWSAPI_KEY,
-            'resultType': 'articles',
-            'articlesPage': 1,
-            'articlesCount': 20,
-            'articlesSortBy': 'date',
-            'articlesSortByAsc': False,
-            # Tam makale metni için articleBodyLen -1 olmalı
-            'articleBodyLen': -1,
-            'dataType': ['news'],
-            'forceMaxDataTimeWindow': 31, # Son 31 güne kadar ara (maksimum izin verilen)
-            'lang': lang,
-            # Daha kapsamlı arama için:
-            'keywordLoc': 'body,title', # Hem başlık hem metin içinde ara
-            'keywordOper': 'or', # Herhangi bir eşleşmeyi bul
-            'keyword': stock,
-            'dateEnd': date.today().strftime('%Y-%m-%d')
-        }
-        primary_params = {k: v for k, v in primary_params.items() if v is not None and v != ''}
-
-        logger.info("Attempting PRIMARY news search for {} with params: {}".format(stock, primary_params))
-        response = requests.get(NEWSAPI_ENDPOINT, params=primary_params, timeout=API_TIMEOUT)
-        logger.info("Primary news search response code ({}): {}".format(stock, response.status_code))
-
-        response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
-
-        data = response.json()
-        articles = data.get('articles', {}).get('results', [])
-        logger.info("Primary search found {} news articles for {}.".format(len(articles), stock))
-
-    except requests.exceptions.HTTPError as http_err:
-        status_code = http_err.response.status_code
-        if status_code == 429:
-            logger.error("EventRegistry API rate limit exceeded (HTTP 429).")
-            return {'error': 'News API rate limit exceeded.'}
-        else:
-            logger.error(
-                "EventRegistry API error ({}) on primary search: HTTP {}".format(stock, status_code),
-                exc_info=True
-            )
-            error_detail = "Unknown"
-            try:
-                error_detail = http_err.response.json()
-            except Exception:
-                pass
-            return {
-                'error': "News API error (HTTP {}). Detail: {}".format(status_code, error_detail)
+        
+        # Calculate date range (last 14 days - daha uzun bir süre için)
+        end_date = date.today()
+        start_date = end_date - timedelta(days=14)
+        
+        # Initialize EventRegistry
+        er = EventRegistry(apiKey=NEWSAPI_KEY)
+        
+        # Build stock-specific query
+        query = {
+            "$query": {
+                "$and": [
+                    {
+                        "keyword": stock  # Search by stock symbol
+                    },
+                    {
+                        "categoryUri": "dmoz/Business/Financial_Services"
+                    },
+                    {
+                        "$or": [{"sourceUri": source} for source in FALLBACK_SOURCE_URIS]
+                    },
+                    {
+                        "dateStart": start_date.strftime("%Y-%m-%d"),
+                        "dateEnd": end_date.strftime("%Y-%m-%d"),
+                        "lang": language_code
+                    }
+                ]
             }
-    except requests.exceptions.Timeout:
-        logger.error("Timeout during primary news search ({})".format(stock))
-        return {'error': 'Timeout fetching news.'}
-    except requests.exceptions.RequestException as e:
-        logger.error("Network error during primary news search ({}): {}".format(stock, e))
-        return {'error': 'Network error: {}'.format(e)}
+        }
+        
+        logger.info("Attempting PRIMARY news search for {} with EventRegistry query".format(stock))
+        q = QueryArticlesIter.initWithComplexQuery(query)
+        
+        # Execute the query with a limited number of results
+        articles_list = []
+        try:
+            # Get up to 15 articles (değiştirildi: 20 → 15)
+            for article in q.execQuery(er, maxItems=15):
+                articles_list.append(article)
+            
+            articles = articles_list
+            logger.info("Primary search found {} news articles for {}.".format(len(articles), stock))
+        except Exception as query_err:
+            logger.error("Error executing EventRegistry query: {}".format(query_err), exc_info=True)
+            return {'error': 'Error querying news API: {}'.format(str(query_err))}
+
     except Exception as e:
         logger.error("General error during primary news search ({}): {}".format(stock, e), exc_info=True)
-        return {'error': 'Unexpected error fetching news.'}
+        return {'error': 'Unexpected error fetching news: {}'.format(str(e))}
 
-    # --- Step 2: Fallback to General News if Primary Search Found Nothing ---
+    # --- Step 2: Fallback to General Financial News if Primary Search Found Nothing ---
     if not articles:
         logger.warning("No specific news found for {}. Attempting fallback.".format(stock))
         is_fallback = True
         try:
-            rate_limit('newsapi') # Apply rate limit again for fallback
-            fallback_params = {
-                'apiKey': NEWSAPI_KEY,
-                'resultType': 'articles',
-                'articlesPage': 1,
-                'articlesCount': 20, # Number of general news items
-                'articlesSortBy': 'date',
-                'articlesSortByAsc': False,
-                'articleBodyLen': -1, # Tam makale metni için
-                'dataType': ['news'],
-                'lang': lang,
-                'sourceUri': FALLBACK_SOURCE_URIS, # Use predefined sources
-                'forceMaxDataTimeWindow': 7, # Look back 7 days for general news
-                'dateEnd': date.today().strftime('%Y-%m-%d')
+            rate_limit('newsapi')  # Apply rate limit again for fallback
+            
+            # Build fallback query (general financial news without stock keyword)
+            fallback_query = {
+                "$query": {
+                    "$and": [
+                        {
+                            "categoryUri": "dmoz/Business/Financial_Services"
+                        },
+                        {
+                            "$or": [{"sourceUri": source} for source in FALLBACK_SOURCE_URIS]
+                        },
+                        {
+                            "dateStart": start_date.strftime("%Y-%m-%d"),
+                            "dateEnd": end_date.strftime("%Y-%m-%d"),
+                            "lang": language_code
+                        }
+                    ]
+                }
             }
-            fallback_params = {k: v for k, v in fallback_params.items() if v is not None and v != ''}
-
-            logger.info("Attempting FALLBACK news search with params: {}".format(fallback_params))
-            fallback_response = requests.get(NEWSAPI_ENDPOINT, params=fallback_params, timeout=API_TIMEOUT)
-            logger.info("Fallback news search response code: {}".format(fallback_response.status_code))
-
-            # Only proceed if fallback was successful
-            if fallback_response.status_code == 200:
-                fallback_data = fallback_response.json()
-                articles = fallback_data.get('articles', {}).get('results', []) # Overwrite with fallback results
-                logger.info("Fallback search found {} general news articles.".format(len(articles)))
-            else:
-                # Log fallback error but don't return an error dict, just return empty list later
-                logger.error("Fallback news search failed with HTTP {}.".format(fallback_response.status_code))
-                articles = [] # Ensure articles is empty if fallback fails
+            
+            logger.info("Attempting FALLBACK news search with EventRegistry query")
+            fallback_q = QueryArticlesIter.initWithComplexQuery(fallback_query)
+            
+            # Execute the fallback query
+            fallback_articles = []
+            for article in fallback_q.execQuery(er, maxItems=15):
+                fallback_articles.append(article)
+            
+            articles = fallback_articles
+            logger.info("Fallback search found {} general news articles.".format(len(articles)))
 
         except Exception as fb_e:
             logger.error("Error during fallback news search: {}".format(fb_e), exc_info=True)
