@@ -3,7 +3,8 @@
 <div class="dashboard-header mb-3">
     <h1 class="fs-4 mb-0">
         {{ stock }}
-        {% if stock_data and stock_data.company_name and stock_data.company_name != stock %} <small class="text-muted fw-normal">({{ stock_data.company_name }})</small> {% endif %}
+        {% if stock_data and stock_data.company_name and stock_data.company_name != stock %} <small
+            class="text-muted fw-normal">({{ stock_data.company_name }})</small> {% endif %}
     </h1>
     <div class="status-badges ms-md-auto d-flex align-items-center gap-3"> {# Added d-flex and gap #}
         {# Market Status #}
@@ -12,9 +13,11 @@
         {% set status_lower = market_status.lower() %}
         {% set is_open = 'reg' in status_lower or 'open' in status_lower %} {# More robust check #}
         {% set is_pre_post = 'pre' in status_lower or 'post' in status_lower or 'extended' in status_lower %}
-        {% set badge_bg = 'bg-success' if is_open else ('bg-warning' if is_pre_post else ('bg-secondary' if 'closed' in status_lower else 'bg-info')) %}
+        {% set badge_bg = 'bg-success' if is_open else ('bg-warning' if is_pre_post else ('bg-secondary' if 'closed' in
+        status_lower else 'bg-info')) %}
         {% set badge_text = 'text-dark' if is_pre_post else 'text-white' %}
-        {% set badge_icon = 'fa-check-circle' if is_open else ('fa-hourglass-half' if is_pre_post else ('fa-times-circle' if 'closed' in status_lower else 'fa-question-circle')) %}
+        {% set badge_icon = 'fa-check-circle' if is_open else ('fa-hourglass-half' if is_pre_post else
+        ('fa-times-circle' if 'closed' in status_lower else 'fa-question-circle')) %}
         <div class="market-status-badge badge rounded-pill px-3 py-1 {{ badge_bg }} {{ badge_text }}">
             <i class="fas {{ badge_icon }} me-1"></i>
             {# *** FIX: Display status directly, remove _() call *** #}
@@ -24,39 +27,44 @@
         {# Price Information #}
         {# *** FIX: Check if stock_data exists before accessing price/change *** #}
         {% if stock_data and stock_data.current_price is not none %}
-            <div class="price-badge text-end">
-                <span class="current-price fw-bold fs-5">{{ stock_data.current_price | format_number(2) }}{{ stock_data.currency | default('$') }}</span> {# Use format_number filter and add currency #}
-                <span class="change-percent small {{ 'text-success' if stock_data.change_percent >= 0 else 'text-danger' }} d-block"> {# d-block to put it below #}
-                    {% if stock_data.change_percent is not none %}
-                        <i class="fas {{ 'fa-arrow-up' if stock_data.change_percent >= 0 else 'fa-arrow-down' }} me-1"></i>
-                        {{ stock_data.change_percent | format_number(2) }}% {# Use format_number filter #}
-                    {% else %}
-                        N/A
-                    {% endif %}
-                </span>
-            </div>
+        <div class="price-badge text-end">
+            <span class="current-price fw-bold fs-5">{{ stock_data.current_price | format_number(2) }}{{
+                stock_data.currency | default('$') }}</span> {# Use format_number filter and add currency #}
+            <span
+                class="change-percent small {{ 'text-success' if stock_data.change_percent >= 0 else 'text-danger' }} d-block">
+                {# d-block to put it below #}
+                {% if stock_data.change_percent is not none %}
+                <i class="fas {{ 'fa-arrow-up' if stock_data.change_percent >= 0 else 'fa-arrow-down' }} me-1"></i>
+                {{ stock_data.change_percent | format_number(2) }}% {# Use format_number filter #}
+                {% else %}
+                N/A
+                {% endif %}
+            </span>
+        </div>
         {% else %}
-             <div class="price-badge text-end ms-3">
-                 <span class="current-price fw-bold fs-5">N/A</span>
-                 <span class="change-percent small text-muted d-block">N/A</span>
-             </div>
+        <div class="price-badge text-end ms-3">
+            <span class="current-price fw-bold fs-5">N/A</span>
+            <span class="change-percent small text-muted d-block">N/A</span>
+        </div>
         {% endif %}
 
         {# Decision Badge #}
         {# *** FIX: Check if decision variable exists and is not None/empty *** #}
-        {% if decision and decision != 'No Data' and decision != 'Error' and decision != 'Analysis N/A' and decision != 'Insufficient data for analysis' and decision != 'Insufficient indicators for decision' and decision != 'No News Data' and decision != 'Decision Error' %}
-            {% set decision_key = decision | lower %} {# Lowercase decision #}
-            {% set decision_map = {'buy': 'success', 'sell': 'danger', 'hold': 'warning'} %}
-            {% set decision_bg = 'bg-' + decision_map.get(decision_key, 'secondary') %}
-            {% set decision_text = 'text-dark' if decision_key == 'hold' else 'text-white' %}
-            <div class="decision-badge badge rounded-pill px-3 py-1 fs-6 {{ decision_bg }} {{ decision_text }}">
-                {{ decision }}
-            </div>
+        {% if decision and decision != 'No Data' and decision != 'Error' and decision != 'Analysis N/A' and decision !=
+        'Insufficient data for analysis' and decision != 'Insufficient indicators for decision' and decision != 'No News
+        Data' and decision != 'Decision Error' %}
+        {% set decision_key = decision | lower %} {# Lowercase decision #}
+        {% set decision_map = {'buy': 'success', 'sell': 'danger', 'hold': 'warning'} %}
+        {% set decision_bg = 'bg-' + decision_map.get(decision_key, 'secondary') %}
+        {% set decision_text = 'text-dark' if decision_key == 'hold' else 'text-white' %}
+        <div class="decision-badge badge rounded-pill px-3 py-1 fs-6 {{ decision_bg }} {{ decision_text }}">
+            {{ decision }}
+        </div>
         {% else %}
-             {# Optionally show a placeholder or nothing if decision is not clear #}
-             <div class="decision-badge badge rounded-pill px-3 py-1 fs-6 bg-light text-muted">
-                {{ decision | default('Analysis Pending') }} {# Show the status like 'No Data' or 'Error' #}
-             </div>
+        {# Optionally show a placeholder or nothing if decision is not clear #}
+        <div class="decision-badge badge rounded-pill px-3 py-1 fs-6 bg-light text-muted">
+            {{ decision | default('Analysis Pending') }} {# Show the status like 'No Data' or 'Error' #}
+        </div>
         {% endif %}
     </div>
 </div>

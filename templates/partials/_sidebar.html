@@ -2,7 +2,8 @@
 
 {# Header section of the sidebar #}
 <div class="sidebar-header pt-3 pb-2 mb-3 border-bottom px-3 text-center"> {# Added text-center #}
-    <a href="{{ url_for('index') }}" class="text-decoration-none text-dark d-block"> {# Make link block for easier clicking #}
+    <a href="{{ url_for('index') }}" class="text-decoration-none text-dark d-block"> {# Make link block for easier
+        clicking #}
         <i class="fas fa-chart-pie fa-2x text-primary mb-2"></i> {# Changed icon, increased size #}
         <h5 class="mb-0 fw-bold">Finance Dash</h5> {# Simplified title #}
     </a>
@@ -15,11 +16,12 @@
     <form method="POST" action="{{ url_for('index') }}" id="searchForm" role="search">
         <label for="stock" class="form-label visually-hidden">Stock Symbol</label> {# Added label for accessibility #}
         <div class="input-group input-group-sm mb-2">
-            <input type="text" id="stock" name="stock" class="form-control" placeholder="Enter Symbol (e.g., AAPL)" value="{{ session.get('last_symbol', '') }}" required aria-label="Stock Symbol Search">
-             <button type="submit" class="btn btn-primary" title="Search Symbol"> {# Removed btn-sm for default size #}
-                 <i class="fas fa-search"></i>
-                 <span class="visually-hidden">Search</span> {# Accessibility text #}
-             </button>
+            <input type="text" id="stock" name="stock" class="form-control" placeholder="Enter Symbol (e.g., AAPL)"
+                value="{{ session.get('last_symbol', '') }}" required aria-label="Stock Symbol Search">
+            <button type="submit" class="btn btn-primary" title="Search Symbol"> {# Removed btn-sm for default size #}
+                <i class="fas fa-search"></i>
+                <span class="visually-hidden">Search</span> {# Accessibility text #}
+            </button>
         </div>
     </form>
     <hr class="my-3">
@@ -27,32 +29,37 @@
 
 {# Main Navigation Tabs #}
 {# Uses Bootstrap nav-pills for styling and tab functionality trigger #}
-<ul class="nav nav-pills nav-sidebar flex-column mb-auto" id="sidebarTabs" role="tablist"> {# mb-auto pushes footer down #}
+<ul class="nav nav-pills nav-sidebar flex-column mb-auto" id="sidebarTabs" role="tablist"> {# mb-auto pushes footer down
+    #}
     {# Overview Tab Link #}
     <li class="nav-item" role="presentation">
         {# Targets the #overview content pane in index.html #}
-        <a class="nav-link active" id="overview-tab" data-bs-toggle="tab" href="#overview" role="tab" aria-controls="overview" aria-selected="true">
+        <a class="nav-link active" id="overview-tab" data-bs-toggle="tab" href="#overview" role="tab"
+            aria-controls="overview" aria-selected="true">
             <i class="fas fa-chart-line fa-fw me-2"></i> Overview
         </a>
     </li>
     {# News Tab Link #}
     <li class="nav-item" role="presentation">
-         {# Targets the #news content pane in index.html #}
-        <a class="nav-link" id="news-tab" data-bs-toggle="tab" href="#news" role="tab" aria-controls="news" aria-selected="false">
+        {# Targets the #news content pane in index.html #}
+        <a class="nav-link" id="news-tab" data-bs-toggle="tab" href="#news" role="tab" aria-controls="news"
+            aria-selected="false">
             <i class="fas fa-newspaper fa-fw me-2"></i> News
         </a>
     </li>
     {# Details Tab Link (Leads to placeholder content) #}
     <li class="nav-item" role="presentation">
-         {# Targets the #details content pane in index.html #}
-        <a class="nav-link" id="details-tab" data-bs-toggle="tab" href="#details" role="tab" aria-controls="details" aria-selected="false">
+        {# Targets the #details content pane in index.html #}
+        <a class="nav-link" id="details-tab" data-bs-toggle="tab" href="#details" role="tab" aria-controls="details"
+            aria-selected="false">
             <i class="fas fa-binoculars fa-fw me-2"></i> Details {# Changed Icon #}
         </a>
     </li>
     {# Forecasting Tab Link #}
     <li class="nav-item" role="presentation">
-         {# Targets the #forecasting content pane in index.html #}
-        <a class="nav-link" id="forecasting-tab" data-bs-toggle="tab" href="#forecasting" role="tab" aria-controls="forecasting" aria-selected="false">
+        {# Targets the #forecasting content pane in index.html #}
+        <a class="nav-link" id="forecasting-tab" data-bs-toggle="tab" href="#forecasting" role="tab"
+            aria-controls="forecasting" aria-selected="false">
             <i class="fas fa-robot fa-fw me-2"></i> Forecast
         </a>
     </li>
@@ -62,7 +69,8 @@
 {# Kept for structure but marked as inactive #}
 {# <div class="mt-auto px-3 pt-3">
     <div class="nav-item dropdown">
-        <a class="nav-link dropdown-toggle text-secondary disabled" href="#" id="languageDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false" aria-disabled="true">
+        <a class="nav-link dropdown-toggle text-secondary disabled" href="#" id="languageDropdown" role="button"
+            data-bs-toggle="dropdown" aria-expanded="false" aria-disabled="true">
             <i class="fas fa-language me-1"></i> English
         </a>
         <ul class="dropdown-menu dropdown-menu-dark" aria-labelledby="languageDropdown">
@@ -75,6 +83,6 @@
 
 {# Sidebar Footer #}
 <div class="sidebar-footer px-3 py-2 text-center text-muted small border-top mt-3">
-     {# *** FIX: Use current_time passed from context *** #}
+    {# *** FIX: Use current_time passed from context *** #}
     © {{ current_time.year }} Finance Dash
 </div>

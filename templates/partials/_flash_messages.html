@@ -2,64 +2,67 @@
 
 {# Use Flask's get_flashed_messages to retrieve messages #}
 {% with messages = get_flashed_messages(with_categories=true) %}
-    {# Check if there are any messages to display #}
-    {% if messages %}
-        {# Container for flash messages, positioned fixed top-right via CSS #}
-        <div class="flash-messages-container position-fixed top-0 end-0 p-3" style="z-index: 1060"> {# Increased z-index slightly #}
-            {# Loop through each message (category, message tuple) #}
-            {% for category, message in messages %}
-                {# Determine alert class based on category #}
-                {# Map 'message' or 'info' category to 'info', 'error' to 'danger' #}
-                {% set alert_category = category if category in ['primary', 'secondary', 'success', 'danger', 'warning', 'info', 'light', 'dark'] else 'info' %}
-                {% if category == 'message' %} {# Treat 'message' as 'info' #}
-                    {% set alert_category = 'info' %}
-                {% elif category == 'error' %} {# Treat 'error' as 'danger' #}
-                     {% set alert_category = 'danger' %}
-                {% endif %}
-
-                {# Determine icon based on category #}
-                {% set icon_class = 'fa-info-circle' %} {# Default icon #}
-                {% if alert_category == 'danger' %}
-                    {% set icon_class = 'fa-exclamation-triangle' %}
-                {% elif alert_category == 'warning' %}
-                    {% set icon_class = 'fa-exclamation-circle' %}
-                {% elif alert_category == 'success' %}
-                     {% set icon_class = 'fa-check-circle' %}
-                {% endif %}
-
-                {# Construct the alert div #}
-                <div class="alert alert-{{ alert_category }} alert-dismissible fade show shadow-sm mb-2" role="alert"> {# Added mb-2 for spacing #}
-                    <i class="fas {{ icon_class }} me-2"></i> {# Display icon #}
-                    {{ message }} {# Display the message text #}
-                    {# Dismiss button #}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                </div>
-            {% endfor %}
-        </div>
-
-         {# Optional: Inline JavaScript to auto-dismiss alerts after a delay #}
-         {# This could also be handled in a global JS file like main.js #}
-         <script>
-             // Wait for the DOM to be ready
-             document.addEventListener('DOMContentLoaded', function() {
-                 // Find all alerts within the flash container
-                 const alerts = document.querySelectorAll('.flash-messages-container .alert');
-                 alerts.forEach(function(alert) {
-                     // Set timeout to auto-close after 5 seconds (5000 ms)
-                     setTimeout(function() {
-                         // Get the Bootstrap Alert instance associated with the element
-                         const bsAlert = bootstrap.Alert.getInstance(alert);
-                         // If an instance exists, call its close method
-                         if (bsAlert) {
-                             bsAlert.close();
-                         } else {
-                              // Fallback if Bootstrap JS isn't fully loaded or fails
-                              // console.warn("Bootstrap Alert instance not found for auto-dismiss.");
-                              // You could manually hide it here if needed: alert.style.display = 'none';
-                         }
-                     }, 5000); // 5 seconds delay
-                 });
-             });
-         </script>
+{# Check if there are any messages to display #}
+{% if messages %}
+{# Container for flash messages, positioned fixed top-right via CSS #}
+<div class="flash-messages-container position-fixed top-0 end-0 p-3" style="z-index: 1060"> {# Increased z-index
+    slightly #}
+    {# Loop through each message (category, message tuple) #}
+    {% for category, message in messages %}
+    {# Determine alert class based on category #}
+    {# Map 'message' or 'info' category to 'info', 'error' to 'danger' #}
+    {% set alert_category = category if category in ['primary', 'secondary', 'success', 'danger', 'warning', 'info',
+    'light', 'dark'] else 'info' %}
+    {% if category == 'message' %} {# Treat 'message' as 'info' #}
+    {% set alert_category = 'info' %}
+    {% elif category == 'error' %} {# Treat 'error' as 'danger' #}
+    {% set alert_category = 'danger' %}
     {% endif %}
+
+    {# Determine icon based on category #}
+    {% set icon_class = 'fa-info-circle' %} {# Default icon #}
+    {% if alert_category == 'danger' %}
+    {% set icon_class = 'fa-exclamation-triangle' %}
+    {% elif alert_category == 'warning' %}
+    {% set icon_class = 'fa-exclamation-circle' %}
+    {% elif alert_category == 'success' %}
+    {% set icon_class = 'fa-check-circle' %}
+    {% endif %}
+
+    {# Construct the alert div #}
+    <div class="alert alert-{{ alert_category }} alert-dismissible fade show shadow-sm mb-2" role="alert"> {# Added mb-2
+        for spacing #}
+        <i class="fas {{ icon_class }} me-2"></i> {# Display icon #}
+        {{ message }} {# Display the message text #}
+        {# Dismiss button #}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>
+    {% endfor %}
+</div>
+
+{# Optional: Inline JavaScript to auto-dismiss alerts after a delay #}
+{# This could also be handled in a global JS file like main.js #}
+<script>
+    // Wait for the DOM to be ready
+    document.addEventListener('DOMContentLoaded', function () {
+        // Find all alerts within the flash container
+        const alerts = document.querySelectorAll('.flash-messages-container .alert');
+        alerts.forEach(function (alert) {
+            // Set timeout to auto-close after 5 seconds (5000 ms)
+            setTimeout(function () {
+                // Get the Bootstrap Alert instance associated with the element
+                const bsAlert = bootstrap.Alert.getInstance(alert);
+                // If an instance exists, call its close method
+                if (bsAlert) {
+                    bsAlert.close();
+                } else {
+                    // Fallback if Bootstrap JS isn't fully loaded or fails
+                    // console.warn("Bootstrap Alert instance not found for auto-dismiss.");
+                    // You could manually hide it here if needed: alert.style.display = 'none';
+                }
+            }, 5000); // 5 seconds delay
+        });
+    });
+</script>
+{% endif %}
 {% endwith %}

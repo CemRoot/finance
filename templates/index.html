@@ -1,97 +1,95 @@
 {% extends 'base.html' %}
 
 {% block title %}
-    Financial Analysis Dashboard {% if stock %}- {{ stock }}{% endif %}
+Financial Analysis Dashboard {% if stock %}- {{ stock }}{% endif %}
 {% endblock %}
 
 {% block content %}
-    {# Check if a stock symbol is actively being displayed #}
-    {% if stock %}
-        {# Include the header specific to the selected stock #}
-        {# It requires 'stock', 'stock_data', and 'decision' variables #}
-        {% include 'partials/_dashboard_header.html' %}
+{# Check if a stock symbol is actively being displayed #}
+{% if stock %}
+{# Include the header specific to the selected stock #}
+{# It requires 'stock', 'stock_data', and 'decision' variables #}
+{% include 'partials/_dashboard_header.html' %}
 
-        {# Display a prominent error message if stock data fetching failed #}
-        {% if error %}
-             <div class="alert alert-danger mt-3" role="alert">
-              <i class="fas fa-exclamation-triangle me-2"></i>
-              <strong>Error:</strong>
-              {# Display the specific error message from the backend #}
-              {% if error_message %}
-                  {{ error_message }} Please check the symbol or try again later.
-              {% else %}
-                  There was a problem loading data for {{ stock }}.
-              {% endif %}
-            </div>
-        {% endif %}
-
-        {# Main Tab Content Area - Only show tabs if there wasn't a complete data loading failure #}
-        {# We might still show tabs even if only news failed, hence check for stock_data existence #}
-        {# If stock_data is None due to error, overview will show its own error message #}
-         <div class="tab-content mt-3" id="dashboardTabContent">
-
-            <!-- Overview Tab Pane -->
-            {# This tab needs 'stock_data' and 'tech_indicators' #}
-            {# It also implicitly uses 'error' and 'error_message' for its internal display logic #}
-            <div class="tab-pane fade show active" id="overview" role="tabpanel" aria-labelledby="overview-tab">
-                {% include 'tabs/overview.html' %}
-            </div>
-
-            <!-- News Tab Pane -->
-            {# This tab needs 'articles' and potentially 'now' for date formatting #}
-             {# Also pass 'error_message' to show if news loading failed #}
-            <div class="tab-pane fade" id="news" role="tabpanel" aria-labelledby="news-tab">
-                {% include 'tabs/news.html' %}
-            </div>
-
-            <!-- Details Tab Pane (Content moved to Overview) -->
-            {# This tab primarily shows a message now #}
-            <div class="tab-pane fade" id="details" role="tabpanel" aria-labelledby="details-tab">
-                 {% include 'tabs/details.html' %} {# Include the placeholder message #}
-            </div>
-
-            <!-- Forecasting Tab Pane -->
-            {# This tab primarily relies on AJAX calls triggered by forecast.js #}
-            {# Pass the stock symbol for AJAX calls #}
-            {# Initial state can show loading or prompt based on JS logic #}
-            <div class="tab-pane fade" id="forecasting" role="tabpanel" aria-labelledby="forecasting-tab">
-                 {# Include the forecast template structure. JS will handle loading. #}
-                 {# Pass stock symbol needed for JS #}
-                 {% include 'tabs/forecast.html' %}
-                 {# Note: Removed forecast_data, decision_data, sentiment_data from here as they are loaded via AJAX #}
-            </div>
-
-        </div> {# End .tab-content #}
-
+{# Display a prominent error message if stock data fetching failed #}
+{% if error %}
+<div class="alert alert-danger mt-3" role="alert">
+    <i class="fas fa-exclamation-triangle me-2"></i>
+    <strong>Error:</strong>
+    {# Display the specific error message from the backend #}
+    {% if error_message %}
+    {{ error_message }} Please check the symbol or try again later.
     {% else %}
-        {# No stock symbol selected, show the welcome screen #}
-        {% include 'partials/_welcome.html' %}
-    {% endif %} {# End if stock #}
+    There was a problem loading data for {{ stock }}.
+    {% endif %}
+</div>
+{% endif %}
+
+{# Main Tab Content Area - Only show tabs if there wasn't a complete data loading failure #}
+{# We might still show tabs even if only news failed, hence check for stock_data existence #}
+{# If stock_data is None due to error, overview will show its own error message #}
+<div class="tab-content mt-3" id="dashboardTabContent">
+
+    <!-- Overview Tab Pane -->
+    {# This tab needs 'stock_data' and 'tech_indicators' #}
+    {# It also implicitly uses 'error' and 'error_message' for its internal display logic #}
+    <div class="tab-pane fade show active" id="overview" role="tabpanel" aria-labelledby="overview-tab">
+        {% include 'tabs/overview.html' %}
+    </div>
+
+    <!-- News Tab Pane -->
+    {# This tab needs 'articles' and potentially 'now' for date formatting #}
+    {# Also pass 'error_message' to show if news loading failed #}
+    <div class="tab-pane fade" id="news" role="tabpanel" aria-labelledby="news-tab">
+        {% include 'tabs/news.html' %}
+    </div>
+
+    <!-- Details Tab Pane (Content moved to Overview) -->
+    {# This tab primarily shows a message now #}
+    <div class="tab-pane fade" id="details" role="tabpanel" aria-labelledby="details-tab">
+        {% include 'tabs/details.html' %} {# Include the placeholder message #}
+    </div>
+
+    <!-- Forecasting Tab Pane -->
+    {# This tab primarily relies on AJAX calls triggered by forecast.js #}
+    {# Pass the stock symbol for AJAX calls #}
+    {# Initial state can show loading or prompt based on JS logic #}
+    <div class="tab-pane fade" id="forecasting" role="tabpanel" aria-labelledby="forecasting-tab">
+        {# Include the forecast template structure. JS will handle loading. #}
+        {# Pass stock symbol needed for JS #}
+        {% include 'tabs/forecast.html' %}
+        {# Note: Removed forecast_data, decision_data, sentiment_data from here as they are loaded via AJAX #}
+    </div>
+
+</div> {# End .tab-content #}
+
+{% else %}
+{# No stock symbol selected, show the welcome screen #}
+{% include 'partials/_welcome.html' %}
+{% endif %} {# End if stock #}
 {% endblock %}
 
 {% block scripts %}
-    {# Include the script that initializes the global window.stockData variable #}
-    <script src="{{ url_for('static', filename='js/stock-data-loader.js') }}" defer></script> {# Added defer #}
+{# Include the script that initializes the global window.stockData variable #}
+<script src="{{ url_for('static', filename='js/stock-data-loader.js') }}" defer></script> {# Added defer #}
 
-    {# Pass simple flags using data attributes #}
-    <div id="flask-data"
-        data-stock="{% if stock %}{{ stock }}{% else %}{% endif %}"
-        data-has-error="{% if error %}true{% else %}false{% endif %}"
-        style="display:none;">
-    </div>
+{# Pass simple flags using data attributes #}
+<div id="flask-data" data-stock="{% if stock %}{{ stock }}{% else %}{% endif %}"
+    data-has-error="{% if error %}true{% else %}false{% endif %}" style="display:none;">
+</div>
 
-    {# Embed the main stock_data object as JSON in a dedicated script tag #}
-    {% if stock_data and not error %}
-    <script id="stock-data-json" type="application/json">
+{# Embed the main stock_data object as JSON in a dedicated script tag #}
+{% if stock_data and not error %}
+<script id="stock-data-json" type="application/json">
         {# Use tojson | safe to correctly serialize the Python dict to a JSON string #}
         {{ stock_data | tojson | safe }}
     </script>
-    {% endif %}
+{% endif %}
 
-    {# Use pure JavaScript to read the data - This block should not cause IDE errors #}
-    <script>
+{# Use pure JavaScript to read the data - This block should not cause IDE errors #}
+<script>
     // Wait for the DOM and deferred scripts to be ready
-    document.addEventListener('DOMContentLoaded', function() {
+    document.addEventListener('DOMContentLoaded', function () {
         console.log("index.html: DOMContentLoaded - Initializing window.stockData using JSON script tag method.");
 
         const dataElement = document.getElementById('flask-data');
@@ -110,36 +108,36 @@
                 // console.error("Content:", stockDataScript.textContent); // Log content on error
                 initialStockData = null;
                 if (typeof showFlashMessage === 'function') { // Check if function exists
-                     showFlashMessage("Error processing stock data structure.", "danger");
+                    showFlashMessage("Error processing stock data structure.", "danger");
                 }
             }
         } else if (!stockDataScript && stockSymbol && !hasError) {
-             console.warn("index.html: JSON script tag not found, but stock symbol exists and no Flask error reported.");
+            console.warn("index.html: JSON script tag not found, but stock symbol exists and no Flask error reported.");
         }
 
         // Initialize based on parsed data and error status
         // Check if the initializer functions are defined before calling
         if (typeof initializeStockData === 'function' && typeof setEmptyStockData === 'function') {
-             if (initialStockData && !hasError) {
-                 try {
-                     initializeStockData(initialStockData);
-                 } catch (e) {
-                     console.error("Error initializing stock data:", e);
-                     setEmptyStockData();
-                      if (typeof showFlashMessage === 'function') {
-                         showFlashMessage("Failed to initialize stock data.", "danger");
-                      }
-                 }
-             } else if (hasError) {
-                 console.warn("index.html: Flask reported an error, setting empty stock data.");
-                 setEmptyStockData();
-             } else {
-                 console.log("index.html: No valid initial stock data found or no stock selected.");
-                 setEmptyStockData();
-             }
+            if (initialStockData && !hasError) {
+                try {
+                    initializeStockData(initialStockData);
+                } catch (e) {
+                    console.error("Error initializing stock data:", e);
+                    setEmptyStockData();
+                    if (typeof showFlashMessage === 'function') {
+                        showFlashMessage("Failed to initialize stock data.", "danger");
+                    }
+                }
+            } else if (hasError) {
+                console.warn("index.html: Flask reported an error, setting empty stock data.");
+                setEmptyStockData();
+            } else {
+                console.log("index.html: No valid initial stock data found or no stock selected.");
+                setEmptyStockData();
+            }
         } else {
-             console.error("stock-data-loader.js functions (initializeStockData or setEmptyStockData) not found!");
+            console.error("stock-data-loader.js functions (initializeStockData or setEmptyStockData) not found!");
         }
     });
-    </script>
+</script>
 {% endblock %}
