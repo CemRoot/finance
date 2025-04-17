@@ -6,7 +6,7 @@ import os
 # EventRegistry API Key (Used for News Fetching)
 # Get from environment variable 'EVENTREGISTRY_API_KEY' or use the provided default.
 # Note: It's best practice to use environment variables for sensitive keys.
-NEWSAPI_KEY = os.environ.get('EVENTREGISTRY_API_KEY', '7c13d593-f204-4d98-9ac4-75ee489a336d') # Replace default if needed
+NEWSAPI_KEY = os.environ.get('EVENTREGISTRY_API_KEY', '7c13d593-f204-4d98-9ac4-75ee489a336d') # Replace default if needed Do NOT THING THIS IS REAL API KEY IM NOT STUPID :)
 
 # EventRegistry API Endpoint for fetching news articles
 NEWSAPI_ENDPOINT = 'https://eventregistry.org/api/v1/article/getArticles'
