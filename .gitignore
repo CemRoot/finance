@@ -26,3 +26,4 @@ local_settings.py
 *.env
 .env
 src/google.json
+credentials/google.json

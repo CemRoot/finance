@@ -52,14 +52,55 @@ function showForecastError(errorMessage) {
 function updateForecastChart(data, stockSymbol) {
     const chartDiv = document.getElementById(FORECAST_CHART_DIV_ID);
     const statusDiv = document.getElementById(FORECAST_STATUS_DIV_ID);
-    if (!chartDiv) { console.error('updateForecastChart: Chart div not found.'); return; }
-    if (!data?.forecast_values?.dates || !data.forecast_values.values || !data.forecast_values.lower_bound || !data.forecast_values.upper_bound) { showForecastError("Invalid forecast data structure."); return; }
+    
+    if (!chartDiv) { 
+        console.error('updateForecastChart: Chart div not found. DOM status:');
+        // DOM durumunu anlamak için logla
+        console.log(`Tab pane exists: ${document.getElementById('forecasting') !== null}`);
+        console.log(`Chart container exists: ${document.getElementById('forecastChartContainer') !== null}`);
+        
+        // 500ms sonra tekrar dene
+        setTimeout(() => {
+            const retryChartDiv = document.getElementById(FORECAST_CHART_DIV_ID);
+            if (retryChartDiv) {
+                console.log('Chart div found after delay. Continuing with chart update.');
+                updateForecastChart(data, stockSymbol); // Recursive call after delay
+                return;
+            } else {
+                console.error('Chart div still not found after delay.');
+                showForecastError("Chart container not found. Please reload the page.");
+            }
+        }, 500);
+        return;
+    }
+    
+    if (!data?.forecast_values?.dates || !data.forecast_values.values || !data.forecast_values.lower_bound || !data.forecast_values.upper_bound) { 
+        console.error('updateForecastChart: Invalid data structure:', data);
+        showForecastError("Invalid forecast data structure."); 
+        return; 
+    }
 
     const forecastData = data.forecast_values;
-    const validIndices = forecastData.values.reduce((acc, v, i) => { if (v !== null && forecastData.dates[i] !== null && forecastData.lower_bound[i] !== null && forecastData.upper_bound[i] !== null) { acc.push(i); } return acc; }, []);
-    if (validIndices.length === 0) { showForecastError("No valid forecast points."); return; }
+    console.log(`Processing ${forecastData.dates.length} forecast points for chart`);
+    
+    const validIndices = forecastData.values.reduce((acc, v, i) => { 
+        if (v !== null && forecastData.dates[i] !== null && forecastData.lower_bound[i] !== null && forecastData.upper_bound[i] !== null) { 
+            acc.push(i); 
+        } 
+        return acc; 
+    }, []);
+    
+    if (validIndices.length === 0) { 
+        console.error('No valid forecast points found in data');
+        showForecastError("No valid forecast points."); 
+        return; 
+    }
 
-    const validDates = validIndices.map(i => forecastData.dates[i]); const validValues = validIndices.map(i => forecastData.values[i]); const validLower = validIndices.map(i => forecastData.lower_bound[i]); const validUpper = validIndices.map(i => forecastData.upper_bound[i]);
+    console.log(`Found ${validIndices.length} valid forecast points`);
+    const validDates = validIndices.map(i => forecastData.dates[i]); 
+    const validValues = validIndices.map(i => forecastData.values[i]); 
+    const validLower = validIndices.map(i => forecastData.lower_bound[i]); 
+    const validUpper = validIndices.map(i => forecastData.upper_bound[i]);
 
     const traceForecast = { x: validDates, y: validValues, name: 'Forecast', mode: 'lines', type: 'scatter', line: { color: '#3498db', width: 2.5 } };
     const traceUpperBound = { x: validDates, y: validUpper, name: 'Upper Bound', mode: 'lines', type: 'scatter', line: { color: 'rgba(52, 152, 219, 0.3)', width: 1, dash: 'dot' }, fill: 'none', showlegend: false };
@@ -68,6 +109,13 @@ function updateForecastChart(data, stockSymbol) {
     const layout = { title: { text: `${stockSymbol} Price Forecast (${validDates.length} Days)`, font: { size: 16 } }, xaxis: { title: 'Date', showgrid: true, gridcolor: '#ecf0f1', type: 'date', tickformat: '%d %b %Y' }, yaxis: { title: 'Predicted Price', showgrid: true, gridcolor: '#ecf0f1', tickformat: (window.stockData?.currency === 'USD' ? '$,.2f' : ',.2f'), autorange: true }, plot_bgcolor: '#FFFFFF', paper_bgcolor: '#FFFFFF', showlegend: true, legend: { x: 0.01, y: 0.99, bgcolor: 'rgba(255,255,255,0.7)', bordercolor: '#CCCCCC', borderwidth: 1, orientation: 'h' }, margin: { l: 60, r: 30, t: 50, b: 50 } };
 
     try {
+        console.log('Attempting to render forecast chart with Plotly');
+        if (typeof Plotly === 'undefined') {
+            console.error('Plotly library not found');
+            chartDiv.innerHTML = `<div class="alert alert-danger p-3 text-center">Chart library (Plotly) not loaded. Please refresh the page.</div>`;
+            return;
+        }
+        
         Plotly.react(chartDiv, [traceLowerBound, traceUpperBound, traceForecast], layout, { responsive: true });
         forecastChartInstance = chartDiv; console.log("Forecast chart updated.");
         if (statusDiv) {
@@ -75,7 +123,47 @@ function updateForecastChart(data, stockSymbol) {
             statusDiv.textContent = `Forecast generated. Last updated: ${timestamp}`;
             statusDiv.className = 'text-center text-muted small mt-2';
         }
-    } catch (e) { console.error("Error updating forecast chart:", e); showForecastError("Failed to render chart."); }
+    } catch (e) { 
+        console.error("Error updating forecast chart:", e); 
+        // Fallback plan for chart rendering
+        try {
+            console.log('Trying fallback HTML rendering for chart');
+            chartDiv.innerHTML = `
+                <div class="alert alert-warning text-center p-2 mb-2">
+                    <small>Chart rendering failed. Showing data in table format.</small>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Forecast</th>
+                                <th>Lower</th>
+                                <th>Upper</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${validIndices.map(i => `
+                                <tr>
+                                    <td>${forecastData.dates[i]}</td>
+                                    <td>${forecastData.values[i]?.toFixed(2)}</td>
+                                    <td>${forecastData.lower_bound[i]?.toFixed(2)}</td>
+                                    <td>${forecastData.upper_bound[i]?.toFixed(2)}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+            if (statusDiv) {
+                statusDiv.textContent = `Forecast data displayed as table (chart rendering failed).`;
+                statusDiv.className = 'text-center text-warning small mt-2';
+            }
+        } catch (tableError) {
+            console.error("Fallback table rendering also failed:", tableError);
+            showForecastError("Failed to render chart or table."); 
+        }
+    }
 }
 
 // --- Metrics & Summary Update Functions ---
@@ -210,6 +298,15 @@ async function loadForecastData(stockSymbol) {
 
     isLoadingForecast = true; currentStockSymbol = stockSymbol;
     console.log(`Requesting forecast data for: ${stockSymbol}`);
+    
+    // Kontrol için HTML elementlerini log'la
+    const chartDiv = document.getElementById(FORECAST_CHART_DIV_ID);
+    const tabPane = document.getElementById('forecasting');
+    console.log(`Chart div exists: ${chartDiv !== null}, Tab pane exists: ${tabPane !== null}`);
+    if (tabPane) {
+        console.log(`Tab pane classes: ${tabPane.className}, visible: ${tabPane.offsetParent !== null}, tab active: ${tabPane.classList.contains('active')}`);
+    }
+    
     showForecastLoading(`Loading forecast for ${stockSymbol}...`);
     const refreshBtn = document.getElementById('refreshForecastBtn'); if (refreshBtn) refreshBtn.disabled = true;
 
@@ -259,48 +356,111 @@ async function fetchWithRetry(url, options = {}, retries = 0) {
 // --- Event Listeners ---
 document.addEventListener('DOMContentLoaded', function () {
     console.log("forecast.js: DOMContentLoaded event fired.");
+
+    // Delay to ensure all elements have properly loaded in DOM
+    setTimeout(function() {
+        initializeForecast();
+    }, 500);
+
+    // Also listen for forecast tab being shown which may load content dynamically
+    const forecastTab = document.getElementById('forecasting-tab');
+    if (forecastTab) {
+        console.log("Adding listener for forecast tab shown event");
+        forecastTab.addEventListener('shown.bs.tab', function() {
+            console.log("Forecast tab shown, initializing forecast components");
+            setTimeout(function() {
+                initializeForecast();
+            }, 300);
+        });
+    }
+});
+
+/**
+ * Initialize forecast components when DOM is ready or tab is shown.
+ * This function can be called multiple times safely - it will only
+ * initialize things that haven't already been initialized.
+ */
+function initializeForecast() {
     const forecastMetaDiv = document.getElementById(FORECAST_META_DIV_ID);
-    const initialStockSymbol = forecastMetaDiv?.dataset.stockSymbol; // Use optional chaining
+    const initialStockSymbol = forecastMetaDiv?.dataset.stockSymbol;
     const forecastChartDiv = document.getElementById(FORECAST_CHART_DIV_ID);
     const refreshBtn = document.getElementById('refreshForecastBtn');
-
-    if (!forecastChartDiv) { console.warn("Forecast chart div not found."); return; }
-
-    // Initial load or placeholder
-    if (initialStockSymbol) {
-        console.log(`forecast.js: Initial symbol ('${initialStockSymbol}'), triggering forecast load.`);
-        loadForecastData(initialStockSymbol);
-    } else {
-        console.log("forecast.js: No initial stock symbol.");
-        showForecastLoading("Select a stock to view forecast.");
+    const forecastTabPane = document.getElementById('forecasting');
+    
+    // Check if forecast tab is currently visible
+    const isTabVisible = forecastTabPane ? forecastTabPane.classList.contains('active') : false;
+    console.log(`Forecast initialization - Tab visible: ${isTabVisible}, Chart div exists: ${!!forecastChartDiv}, Meta div exists: ${!!forecastMetaDiv}`);
+    
+    if (!forecastChartDiv) { 
+        if (isTabVisible) {
+            console.warn("Forecast chart div not found even though tab is visible. This may indicate a template issue.");
+        } else {
+            console.log("Forecast chart div not found. Will initialize when tab is shown.");
+        }
+        return; 
     }
 
-    // Refresh button listener
     if (refreshBtn) {
-        refreshBtn.addEventListener('click', function () {
-            const currentSymbol = document.getElementById(FORECAST_META_DIV_ID)?.dataset.stockSymbol;
-            if (currentSymbol && !isLoadingForecast) {
-                console.log(`Forecast refresh triggered for ${currentSymbol}`); this.disabled = true;
-                fetch(`/clear_cache?key=forecast_${currentSymbol}`) // Clear cache first
-                    .then(res => { if (!res.ok) console.warn("Could not clear forecast cache."); return loadForecastData(currentSymbol); }) // Then load data
-                    .catch(err => { console.error("Error clearing cache:", err); loadForecastData(currentSymbol); }); // Still load data on cache clear error
-            } else if (isLoadingForecast) { console.log("Refresh clicked, but already loading."); }
-            else { console.warn("Refresh clicked but no symbol found."); }
-        });
-        console.log("Refresh forecast button listener attached.");
-    } else { console.warn("Refresh forecast button not found."); }
+        // Only attach event listener if it hasn't been attached already
+        if (!refreshBtn.hasAttribute('data-listener-attached')) {
+            refreshBtn.setAttribute('data-listener-attached', 'true');
+            refreshBtn.addEventListener('click', function () {
+                const currentSymbol = document.getElementById(FORECAST_META_DIV_ID)?.dataset.stockSymbol;
+                if (currentSymbol && !isLoadingForecast) {
+                    console.log(`Forecast refresh triggered for ${currentSymbol}`); 
+                    this.disabled = true;
+                    fetch(`/clear_cache?key=forecast_${currentSymbol}`)
+                        .then(res => { 
+                            if (!res.ok) console.warn("Could not clear forecast cache."); 
+                            return loadForecastData(currentSymbol); 
+                        })
+                        .catch(err => { 
+                            console.error("Error clearing cache:", err); 
+                            loadForecastData(currentSymbol); 
+                        });
+                } else if (isLoadingForecast) { 
+                    console.log("Refresh clicked, but already loading."); 
+                } else { 
+                    console.warn("Refresh clicked but no symbol found."); 
+                }
+            });
+            console.log("Refresh forecast button listener attached");
+        }
+    } else {
+        console.log("Refresh forecast button not found");
+    }
 
     // Tab shown listener for Plotly resize
     const forecastTabLink = document.getElementById('forecasting-tab');
-    if (forecastTabLink) {
+    if (forecastTabLink && !forecastTabLink.hasAttribute('data-resize-listener-attached')) {
+        forecastTabLink.setAttribute('data-resize-listener-attached', 'true');
         forecastTabLink.addEventListener('shown.bs.tab', function () {
             const chartDiv = document.getElementById(FORECAST_CHART_DIV_ID);
             // Check Plotly and if chart exists (chartDiv.data is a Plotly property)
             if (chartDiv && typeof Plotly !== 'undefined' && chartDiv.data) {
-                try { console.log("Forecast tab shown, resizing Plotly chart..."); setTimeout(() => Plotly.Plots.resize(chartDiv), 100); }
-                catch (e) { console.error("Plotly resize error:", e); }
-            } else { console.warn("Forecast tab shown, but Plotly chart not ready for resize."); }
+                try { 
+                    console.log("Forecast tab shown, resizing Plotly chart..."); 
+                    setTimeout(() => Plotly.Plots.resize(chartDiv), 100); 
+                } catch (e) { 
+                    console.error("Plotly resize error:", e); 
+                }
+            } else { 
+                console.log("Forecast tab shown, but Plotly chart not ready for resize."); 
+            }
         });
-        console.log("Listener attached for 'shown.bs.tab' on forecast tab.");
-    } else { console.warn("Forecast tab link ('#forecasting-tab') not found."); }
-}); // End DOMContentLoaded
+        console.log("Listener attached for 'shown.bs.tab' on forecast tab");
+    }
+        
+    // Initial load or placeholder
+    if (initialStockSymbol && isTabVisible) {
+        console.log(`forecast.js: Initial symbol ('${initialStockSymbol}'), triggering forecast load.`);
+        loadForecastData(initialStockSymbol);
+    } else if (initialStockSymbol) {
+        console.log(`forecast.js: Initial symbol ('${initialStockSymbol}') available, but tab not visible. Will load when tab is shown.`);
+    } else {
+        console.log("forecast.js: No initial stock symbol.");
+        if (isTabVisible) {
+            showForecastLoading("Select a stock to view forecast.");
+        }
+    }
+}

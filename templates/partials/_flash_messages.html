@@ -7,6 +7,7 @@
 {# Container for flash messages, positioned fixed top-right via CSS #}
 <div class="flash-messages-container position-fixed top-0 end-0 p-3" style="z-index: 1060"> {# Increased z-index
     slightly #}
+
     {# Loop through each message (category, message tuple) #}
     {% for category, message in messages %}
     {# Determine alert class based on category #}

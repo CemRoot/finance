@@ -125,7 +125,7 @@ const commonChartOptions = {
             type: 'time', // Varsayılan 'time' ekseni
             time: {
                 unit: 'day',
-                tooltipFormat: 'DD MMM YYYY HH:mm', // Luxon formatı
+                tooltipFormat: 'dd MMM yyyy HH:mm', // Luxon formatı
                 displayFormats: { day: 'dd MMM yy' }
             },
             grid: { display: false },
@@ -151,7 +151,7 @@ const commonChartOptions = {
                 title: function(tooltipItems) { // Tooltip başlığı (time ekseni için)
                     const firstItem = tooltipItems[0];
                     if (firstItem?.parsed?.x && typeof luxon !== 'undefined' && luxon.DateTime) {
-                         try { return luxon.DateTime.fromMillis(firstItem.parsed.x).toFormat('DD MMM YYYY HH:mm'); }
+                         try { return luxon.DateTime.fromMillis(firstItem.parsed.x).toFormat('dd MMM yyyy HH:mm'); }
                          catch(e) { console.warn("Error formatting tooltip title with Luxon:", e); return new Date(firstItem.parsed.x).toLocaleString(); }
                     } else if (firstItem?.parsed?.x) { return new Date(firstItem.parsed.x).toLocaleString(); }
                     return '';
@@ -321,6 +321,126 @@ function createHighLowChart(stockData) {
     createOrUpdateChart(canvasId, 'highLowChartInstance', { type: 'line', data: { datasets: [ { label: 'Low', data: lowData, borderColor: 'rgba(220, 53, 69, 0.8)', backgroundColor: 'rgba(220, 53, 69, 0.1)', borderWidth: 1.5, pointRadius: 0, tension: 0.1, fill: false }, { label: 'High', data: highData, borderColor: 'rgba(25, 135, 84, 0.8)', backgroundColor: 'rgba(35, 195, 105, 0.2)', borderWidth: 1.5, pointRadius: 0, tension: 0.1, fill: '-1' } ] }, options: options });
 }
 
+// --- Chart Type & Range Selection ---
+/** Filter stock data based on the selected time range */
+function filterStockDataByRange(stockData, timeRange) {
+    if (!stockData || !stockData.labels || !stockData.values) {
+        console.warn("filterStockDataByRange: Invalid stock data");
+        return stockData;
+    }
+
+    const labels = stockData.labels.slice();
+    const values = stockData.values.slice();
+    const open_values = stockData.open_values ? stockData.open_values.slice() : [];
+    const high_values = stockData.high_values ? stockData.high_values.slice() : [];
+    const low_values = stockData.low_values ? stockData.low_values.slice() : [];
+    const volume_values = stockData.volume_values ? stockData.volume_values.slice() : [];
+    let candlestick_data = stockData.candlestick_data ? stockData.candlestick_data.slice() : [];
+
+    if (timeRange === 'ALL' || !timeRange) {
+        return stockData; // Return all data
+    }
+
+    const today = new Date();
+    let cutoffDate;
+
+    switch (timeRange) {
+        case '1D':
+            cutoffDate = new Date(today);
+            cutoffDate.setDate(today.getDate() - 1);
+            break;
+        case '1W':
+            cutoffDate = new Date(today);
+            cutoffDate.setDate(today.getDate() - 7);
+            break;
+        case '1M':
+            cutoffDate = new Date(today);
+            cutoffDate.setMonth(today.getMonth() - 1);
+            break;
+        case '3M':
+            cutoffDate = new Date(today);
+            cutoffDate.setMonth(today.getMonth() - 3);
+            break;
+        case '6M':
+            cutoffDate = new Date(today);
+            cutoffDate.setMonth(today.getMonth() - 6);
+            break;
+        case '1Y':
+            cutoffDate = new Date(today);
+            cutoffDate.setFullYear(today.getFullYear() - 1);
+            break;
+        case '5Y':
+            cutoffDate = new Date(today);
+            cutoffDate.setFullYear(today.getFullYear() - 5);
+            break;
+        default:
+            return stockData; // Default is ALL
+    }
+
+    const cutoffDateStr = cutoffDate.toISOString().split('T')[0]; // Format as YYYY-MM-DD
+    console.log(`Filtering data from ${cutoffDateStr}`);
+
+    const filteredIndexes = [];
+    for (let i = 0; i < labels.length; i++) {
+        if (labels[i] >= cutoffDateStr) {
+            filteredIndexes.push(i);
+        }
+    }
+
+    if (filteredIndexes.length === 0) {
+        console.warn(`No data found for range: ${timeRange}`);
+        return stockData; // Return all data if no filtered data
+    }
+
+    const filteredData = {
+        ...stockData,
+        labels: filteredIndexes.map(i => labels[i]),
+        values: filteredIndexes.map(i => values[i]),
+        open_values: filteredIndexes.map(i => open_values[i]),
+        high_values: filteredIndexes.map(i => high_values[i]),
+        low_values: filteredIndexes.map(i => low_values[i]),
+        volume_values: filteredIndexes.map(i => volume_values[i]),
+    };
+
+    // Filter candlestick data if available
+    if (candlestick_data && candlestick_data.length > 0) {
+        filteredData.candlestick_data = candlestick_data.filter(candle => 
+            candle.t >= cutoffDateStr
+        );
+    }
+
+    console.log(`Filtered data from ${filteredData.labels[0]} to ${filteredData.labels[filteredData.labels.length-1]}, ${filteredData.labels.length} points`);
+    return filteredData;
+}
+
+/** Renders all charts based on the selected time range and chart type */
+function renderChartsWithFilters() {
+    if (!window.stockData || window.stockData.error) {
+        console.warn("renderChartsWithFilters: No valid stock data available");
+        return;
+    }
+
+    const activeChartType = document.querySelector('.chart-type-selector input[name="chartType"]:checked')?.dataset.chartType || 'candlestick';
+    const activeTimeRange = document.querySelector('.time-range-selector .btn.active')?.dataset.range || 'ALL';
+    
+    console.log(`Rendering charts with type: ${activeChartType}, range: ${activeTimeRange}`);
+    
+    // Apply time range filter
+    const filteredData = filterStockDataByRange(window.stockData, activeTimeRange);
+    
+    // Render charts with filtered data
+    createOrUpdatePriceChart(filteredData, activeChartType);
+    createOrUpdateVolumeChart(filteredData);
+    
+    // Update detail charts if in the overview tab
+    const overviewTab = document.getElementById('overview');
+    if (overviewTab?.classList.contains('active')) {
+        console.log("Overview tab active, updating detail charts");
+        createOpenCloseChart(filteredData);
+        createDetailVolumeChart(filteredData);
+        createHighLowChart(filteredData);
+    }
+}
 
 // --- AJAX Data Refresh ---
 /** Fetches fresh stock data via AJAX and updates charts/UI. */
@@ -339,13 +459,10 @@ function refreshStockData() {
         .then(data => {
             if (data.status === 'success' && data.stock_data) {
                 console.log("Data refreshed successfully via AJAX."); window.stockData = data.stock_data; updateStockInfo(window.stockData);
-                const activeChartType = document.querySelector('.chart-type-selector input[name="chartType"]:checked')?.dataset.chartType || 'candlestick';
-                // *** DÜZELTME: Use activeChartType for price chart refresh ***
-                createOrUpdatePriceChart(window.stockData, activeChartType);
-                createOrUpdateVolumeChart(window.stockData);
-                 const overviewTab = document.getElementById('overview');
-                 if (overviewTab?.classList.contains('active')) { console.log("Refreshing detail charts."); initializeDetailCharts(); }
-                 else { console.log("Overview tab not active."); }
+                
+                // Use renderChartsWithFilters instead of directly calling createOrUpdatePriceChart
+                renderChartsWithFilters();
+                
                 const timestampEl = document.querySelector('.last-updated');
                  if (timestampEl && window.stockData.timestamp) {
                      try {
@@ -417,14 +534,32 @@ document.addEventListener('DOMContentLoaded', function() {
     function initializePageCharts() {
         if (window.stockData && !window.stockData.error) {
             console.log("Initializing overview charts.");
-            // *** DÜZELTME: Başlangıçta mum grafiği göster ***
-            createOrUpdatePriceChart(window.stockData, 'candlestick');
-            createOrUpdateVolumeChart(window.stockData);
+            
+            // Set default selected time range if none is active
+            const timeRangeButtons = document.querySelectorAll('.time-range-selector .btn');
+            if (timeRangeButtons.length > 0) {
+                let hasActive = false;
+                timeRangeButtons.forEach(btn => {
+                    if (btn.classList.contains('active')) hasActive = true;
+                });
+                
+                if (!hasActive) {
+                    // Set '1Y' as default if available, otherwise the first button
+                    const defaultButton = Array.from(timeRangeButtons).find(btn => btn.dataset.range === '1Y') || timeRangeButtons[0];
+                    defaultButton.classList.add('active');
+                }
+            }
+            
+            // Use the new combined function to render charts with filters
+            renderChartsWithFilters();
+            
+            // Update header info
             updateStockInfo(window.stockData);
-            const overviewTabLink = document.getElementById('overview-tab');
-            if (overviewTabLink?.classList.contains('active')) { console.log("Overview tab active, initializing detail charts."); initializeDetailCharts(); }
-            else { console.log("Overview tab not active initially."); }
-        } else { console.log("No initial valid stock data."); updateStockInfo(window.stockData); }
+        } else { 
+            console.log("No initial valid stock data."); 
+            updateStockInfo(window.stockData); 
+        }
+        
         attachEventListeners();
     }
 
@@ -433,22 +568,139 @@ document.addEventListener('DOMContentLoaded', function() {
 
     /** Attaches main event listeners. */
     function attachEventListeners() {
-         // Chart type selector
-         const chartTypeRadios = document.querySelectorAll('.chart-type-selector input[name="chartType"]');
-         chartTypeRadios.forEach(radio => {
-             radio.addEventListener('change', function() {
-                 if (this.checked && window.stockData && !window.stockData.error) {
-                      console.log(`Chart type changed to: ${this.dataset.chartType}`);
-                     // *** DÜZELTME: Zorlamayı kaldır, seçilen tipi kullan ***
-                      createOrUpdatePriceChart(window.stockData, this.dataset.chartType);
-                 }
-             });
-         });
-         // Diğer event listener'lar aynı kalır...
-         const refreshButton = document.getElementById('refreshStockBtn'); if (refreshButton) { refreshButton.addEventListener('click', refreshStockData); }
-         const overviewTabLinkForListener = document.getElementById('overview-tab'); if (overviewTabLinkForListener) { overviewTabLinkForListener.addEventListener('shown.bs.tab', initializeDetailCharts); }
-         const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]')); if (tooltipTriggerList.length > 0) { tooltipTriggerList.map(function (tooltipTriggerEl) { return new bootstrap.Tooltip(tooltipTriggerEl); }); }
-         console.log("script.js: Event listeners attached.");
+        console.log("Attaching event listeners with delay to ensure DOM elements are ready");
+        
+        // DOM elementlerinin hazır olması için bir gecikme ekle
+        setTimeout(function() {
+            // Chart type selector
+            const chartTypeRadios = document.querySelectorAll('.chart-type-selector input[name="chartType"]');
+            if (chartTypeRadios.length > 0) {
+                chartTypeRadios.forEach(radio => {
+                    radio.addEventListener('change', function() {
+                        if (this.checked && window.stockData && !window.stockData.error) {
+                            console.log(`Chart type changed to: ${this.dataset.chartType}`);
+                            // Trigger re-render of charts with filters
+                            renderChartsWithFilters();
+                        }
+                    });
+                });
+                console.log("Chart type selector listeners attached");
+            } else {
+                console.log("Chart type selector elements not found - will try again when overview tab is shown");
+                // Add a listener for the overview tab to be shown
+                const overviewTab = document.getElementById('overview-tab');
+                if (overviewTab) {
+                    overviewTab.addEventListener('shown.bs.tab', function() {
+                        setTimeout(function() {
+                            const chartTypeElementsRetry = document.querySelectorAll('.chart-type-selector input[type="radio"]');
+                            if (chartTypeElementsRetry.length > 0) {
+                                chartTypeElementsRetry.forEach(radio => {
+                                    radio.addEventListener('change', function() {
+                                        if (this.checked) {
+                                            console.log(`Chart type changed to: ${this.dataset.chartType}`);
+                                            renderChartsWithFilters();
+                                        }
+                                    });
+                                });
+                                console.log("Chart type selector listeners attached after tab shown");
+                            }
+                        }, 300);
+                    });
+                }
+            }
+            
+            // Time range selector - Add this section to handle time range buttons
+            const timeRangeButtons = document.querySelectorAll('.time-range-selector .btn');
+            if (timeRangeButtons.length > 0) {
+                timeRangeButtons.forEach(button => {
+                    button.addEventListener('click', function(e) {
+                        e.preventDefault();
+                        // Remove active class from all buttons
+                        timeRangeButtons.forEach(btn => btn.classList.remove('active'));
+                        // Add active class to clicked button
+                        this.classList.add('active');
+                        
+                        if (window.stockData && !window.stockData.error) {
+                            console.log(`Time range changed to: ${this.dataset.range}`);
+                            // Trigger re-render of charts with filters
+                            renderChartsWithFilters();
+                        }
+                    });
+                });
+                console.log("Time range selector listeners attached");
+            } else {
+                console.log("Time range selector buttons not found - will try again when overview tab is shown");
+                
+                // Try again when overview tab is shown
+                const overviewTab = document.getElementById('overview-tab');
+                if (overviewTab) {
+                    console.log("Adding retry listener for overview tab shown event");
+                    overviewTab.addEventListener('shown.bs.tab', function() {
+                        setTimeout(function() {
+                            const timeRangeButtonsRetry = document.querySelectorAll('.time-range-selector .btn');
+                            if (timeRangeButtonsRetry.length > 0) {
+                                console.log("Found time range buttons after tab shown");
+                                timeRangeButtonsRetry.forEach(button => {
+                                    button.addEventListener('click', function(e) {
+                                        e.preventDefault();
+                                        timeRangeButtonsRetry.forEach(btn => btn.classList.remove('active'));
+                                        this.classList.add('active');
+                                        
+                                        if (window.stockData && !window.stockData.error) {
+                                            console.log(`Time range changed to: ${this.dataset.range}`);
+                                            renderChartsWithFilters();
+                                        }
+                                    });
+                                });
+                                console.log("Time range selector listeners attached after tab shown");
+                            } else {
+                                console.log("Time range selector buttons still not found after tab shown");
+                            }
+                        }, 300);
+                    });
+                }
+            }
+            
+            // Other event listeners
+            const refreshButton = document.getElementById('refreshStockBtn'); 
+            if (refreshButton) { 
+                refreshButton.addEventListener('click', refreshStockData); 
+                console.log("Refresh stock button listener attached");
+            } else {
+                console.log("Refresh stock button not found - will try again when overview tab is shown");
+                // Try again when overview tab is shown
+                const overviewTab = document.getElementById('overview-tab');
+                if (overviewTab) {
+                    overviewTab.addEventListener('shown.bs.tab', function() {
+                        setTimeout(function() {
+                            const refreshButtonRetry = document.getElementById('refreshStockBtn');
+                            if (refreshButtonRetry) {
+                                refreshButtonRetry.addEventListener('click', refreshStockData);
+                                console.log("Refresh stock button listener attached after tab shown");
+                            }
+                        }, 300);
+                    });
+                }
+            }
+            
+            const overviewTabLinkForListener = document.getElementById('overview-tab'); 
+            if (overviewTabLinkForListener) { 
+                overviewTabLinkForListener.addEventListener('shown.bs.tab', initializeDetailCharts);
+                console.log("Overview tab shown listener attached");
+            } else {
+                console.warn("Overview tab link not found");
+            }
+            
+            const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]')); 
+            if (tooltipTriggerList.length > 0) { 
+                tooltipTriggerList.map(function (tooltipTriggerEl) { 
+                    return new bootstrap.Tooltip(tooltipTriggerEl);
+                });
+                console.log("Tooltips initialized");
+            }
+            
+            console.log("script.js: Event listeners attached.");
+        }, 500); // 500ms gecikme ile elementlerin yüklenmesini bekle
     }
 
 }); // End DOMContentLoaded

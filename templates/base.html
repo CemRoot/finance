@@ -11,6 +11,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"/>
     <!-- Custom CSS -->
     <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/loader.css') }}">
 
     {# --- Charting Libraries --- #}
     {# *** DÜZELTME: Adaptörü YEREL olarak yükle *** #}
@@ -23,7 +24,17 @@
     {% block head_extra %}{% endblock %}
 </head>
 <body>
-    {# ... (body içeriği aynı) ... #}
+    <div class="loader-container" id="loaderContainer">
+        <div class="background-numbers" id="backgroundNumbers"></div>
+        <div class="neural-network" id="neuralNetwork"></div>
+        <div class="prediction-text">AI Financial Prediction System</div>
+        <div class="progress-bar">
+            <div class="progress" id="progressBar"></div>
+        </div>
+        <div class="status-text-container">
+            <div class="status-text visible" id="statusText">Initializing...</div>
+        </div>
+    </div>
     <div class="container-fluid">
         <div class="row">
             <div class="col-lg-2 col-md-3 sidebar px-0 d-none d-md-flex flex-column">
@@ -38,14 +49,53 @@
         </div>
     </div>
     {# Bootstrap JS Bundle (CDN veya Yerel) #}
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js" defer></script>
-    {# <script src="{{ url_for('static', filename='lib/bootstrap.bundle.min.js') }}" defer></script> #}
-
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    
     <!-- Custom JS Files -->
-    <script src="{{ url_for('static', filename='js/main.js') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/stock-data-loader.js') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/script.js') }}" defer></script>
-    <script src="{{ url_for('static', filename='js/forecast.js') }}" defer></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/stock-data-loader.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/loader.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/forecast.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/ml-analysis.js') }}"></script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Add loading screen to all model analysis buttons
+            const modelButtons = document.querySelectorAll('a[href*="model_comparison"], a[href*="random_forest_analysis"], a[href*="xgboost_analysis"], a[href*="ml_analysis"]');
+            
+            modelButtons.forEach(button => {
+                button.addEventListener('click', function(e) {
+                    // Only prevent default if this is a link that will navigate away
+                    if (!this.getAttribute('href').startsWith('#')) {
+                        e.preventDefault();
+                        const targetUrl = this.getAttribute('href');
+                        
+                        // Show the loader with appropriate duration based on analysis type
+                        const isComparison = targetUrl.includes('model_comparison');
+                        const estimatedTime = isComparison ? 20000 : 15000; // Longer time for comparison
+                        
+                        console.log(`Showing loader for: ${targetUrl}`);
+                        showLoader(estimatedTime);
+                        
+                        // Navigate after a short delay to ensure the loader is shown
+                        setTimeout(() => {
+                            window.location.href = targetUrl;
+                        }, 300);
+                    }
+                });
+            });
+            
+            // If the page just loaded and it's a results page, hide the loader
+            if (window.location.href.includes('model_comparison') || 
+                window.location.href.includes('random_forest_analysis') || 
+                window.location.href.includes('xgboost_analysis') || 
+                window.location.href.includes('ml_analysis')) {
+                hideLoader();
+            }
+        });
+    </script>
+
     {% block scripts %}{% endblock %}
 </body>
 </html>

@@ -1,0 +1,433 @@
+{% extends "base.html" %}
+
+{% block title %}{{ symbol }} - Full Stock Analysis{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-3">
+    <div class="row mb-3">
+        <div class="col-md-12">
+            <h2 class="display-5">{{ company_name }} ({{ symbol }}) Full Analysis</h2>
+            <p class="lead text-muted">10-Year Comprehensive Analysis with Technical Indicators and Fundamental Data</p>
+        </div>
+    </div>
+
+    <!-- Overview Card -->
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <div class="card border-primary">
+                <div class="card-header bg-primary text-white">
+                    <h3 class="mb-0">Data Overview</h3>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h4>Stock Information</h4>
+                            <table class="table table-sm">
+                                <tbody>
+                                    <tr>
+                                        <th>Symbol</th>
+                                        <td>{{ symbol }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Company Name</th>
+                                        <td>{{ company_name }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Sector</th>
+                                        <td>{{ company_info.get('Sector', 'N/A') }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Industry</th>
+                                        <td>{{ company_info.get('Industry', 'N/A') }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Exchange</th>
+                                        <td>{{ company_info.get('Exchange', 'N/A') }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Currency</th>
+                                        <td>{{ company_info.get('Currency', 'USD') }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="col-md-6">
+                            <h4>Dataset Statistics</h4>
+                            <table class="table table-sm">
+                                <tbody>
+                                    <tr>
+                                        <th>Date Range</th>
+                                        <td>{{ stats.start_date }} to {{ stats.end_date }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Trading Days</th>
+                                        <td>{{ stats.trading_days }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Average Volume</th>
+                                        <td>{{ stats.avg_volume }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Price Range</th>
+                                        <td>{{ stats.min_price }} to {{ stats.max_price }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Feature Count</th>
+                                        <td>{{ stats.features_count }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Processing Time</th>
+                                        <td>{{ stats.processing_time }}s</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Data Tabs -->
+    <div class="row">
+        <div class="col-md-12">
+            <ul class="nav nav-tabs" id="analysisTab" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="price-tab" data-bs-toggle="tab" data-bs-target="#price" type="button" role="tab" aria-controls="price" aria-selected="true">
+                        Price History
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="indicators-tab" data-bs-toggle="tab" data-bs-target="#indicators" type="button" role="tab" aria-controls="indicators" aria-selected="false">
+                        Technical Indicators
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="fundamental-tab" data-bs-toggle="tab" data-bs-target="#fundamental" type="button" role="tab" aria-controls="fundamental" aria-selected="false">
+                        Fundamental Data
+                    </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="features-tab" data-bs-toggle="tab" data-bs-target="#features" type="button" role="tab" aria-controls="features" aria-selected="false">
+                        ML Features
+                    </button>
+                </li>
+            </ul>
+
+            <div class="tab-content p-3 border border-top-0 rounded-bottom" id="analysisTabContent">
+                <!-- Price History Tab -->
+                <div class="tab-pane fade show active" id="price" role="tabpanel" aria-labelledby="price-tab">
+                    <div class="row">
+                        <div class="col-md-12 mb-4">
+                            <h4>10-Year Price History</h4>
+                            <p class="text-muted">Historical price data from {{ stats.start_date }} to {{ stats.end_date }}</p>
+                            <div class="chart-container" style="height: 400px;">
+                                <!-- Placeholder for actual chart rendering -->
+                                <div class="d-flex align-items-center justify-content-center h-100 border rounded bg-light">
+                                    <div class="text-center">
+                                        <p class="lead">Price Chart</p>
+                                        <p class="text-muted">10-year OHLC data visualization will appear here</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Technical Indicators Tab -->
+                <div class="tab-pane fade" id="indicators" role="tabpanel" aria-labelledby="indicators-tab">
+                    <div class="row">
+                        <div class="col-md-12 mb-4">
+                            <h4>Technical Indicators</h4>
+                            <p class="text-muted">Comprehensive technical analysis indicators from Alpha Vantage</p>
+                            
+                            <div class="card-group mb-4">
+                                <!-- Trend Indicators -->
+                                <div class="card">
+                                    <div class="card-header bg-info text-white">
+                                        <h5 class="mb-0">Trend Indicators</h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <ul class="list-group list-group-flush">
+                                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                                <span>Simple Moving Average (SMA)</span>
+                                                <span class="badge bg-primary rounded-pill">✓</span>
+                                            </li>
+                                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                                <span>Exponential Moving Average (EMA)</span>
+                                                <span class="badge bg-primary rounded-pill">✓</span>
+                                            </li>
+                                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                                <span>Moving Average Convergence Divergence (MACD)</span>
+                                                <span class="badge bg-primary rounded-pill">✓</span>
+                                            </li>
+                                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                                <span>Average Directional Index (ADX)</span>
+                                                <span class="badge bg-primary rounded-pill">✓</span>
+                                            </li>
+                                        </ul>
+                                    </div>
+                                </div>
+
+                                <!-- Momentum Indicators -->
+                                <div class="card">
+                                    <div class="card-header bg-success text-white">
+                                        <h5 class="mb-0">Momentum Indicators</h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <ul class="list-group list-group-flush">
+                                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                                <span>Relative Strength Index (RSI)</span>
+                                                <span class="badge bg-primary rounded-pill">✓</span>
+                                            </li>
+                                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                                <span>Rate of Change (ROC)</span>
+                                                <span class="badge bg-primary rounded-pill">✓</span>
+                                            </li>
+                                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                                <span>Stochastic Oscillator (STOCH)</span>
+                                                <span class="badge bg-primary rounded-pill">✓</span>
+                                            </li>
+                                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                                <span>Commodity Channel Index (CCI)</span>
+                                                <span class="badge bg-primary rounded-pill">✓</span>
+                                            </li>
+                                        </ul>
+                                    </div>
+                                </div>
+
+                                <!-- Volatility/Volume Indicators -->
+                                <div class="card">
+                                    <div class="card-header bg-warning text-dark">
+                                        <h5 class="mb-0">Volatility & Volume</h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <ul class="list-group list-group-flush">
+                                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                                <span>Bollinger Bands (BBANDS)</span>
+                                                <span class="badge bg-primary rounded-pill">✓</span>
+                                            </li>
+                                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                                <span>Average True Range (ATR)</span>
+                                                <span class="badge bg-primary rounded-pill">✓</span>
+                                            </li>
+                                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                                <span>On-Balance Volume (OBV)</span>
+                                                <span class="badge bg-primary rounded-pill">✓</span>
+                                            </li>
+                                            <li class="list-group-item d-flex justify-content-between align-items-center">
+                                                <span>Volatility (20-day)</span>
+                                                <span class="badge bg-primary rounded-pill">✓</span>
+                                            </li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="chart-container" style="height: 400px;">
+                                <!-- Placeholder for actual indicators chart -->
+                                <div class="d-flex align-items-center justify-content-center h-100 border rounded bg-light">
+                                    <div class="text-center">
+                                        <p class="lead">Technical Indicators Visualization</p>
+                                        <p class="text-muted">Visual representation of technical indicators will appear here</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Fundamental Data Tab -->
+                <div class="tab-pane fade" id="fundamental" role="tabpanel" aria-labelledby="fundamental-tab">
+                    <div class="row">
+                        <div class="col-md-6 mb-4">
+                            <h4>Company Information</h4>
+                            <table class="table table-striped">
+                                <tbody>
+                                    <tr>
+                                        <th>Market Capitalization</th>
+                                        <td>{{ company_info.get('MarketCapitalization', 'N/A') }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>PE Ratio</th>
+                                        <td>{{ company_info.get('PERatio', 'N/A') }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>EPS</th>
+                                        <td>{{ company_info.get('EPS', 'N/A') }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Beta</th>
+                                        <td>{{ company_info.get('Beta', 'N/A') }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>52-Week High</th>
+                                        <td>{{ company_info.get('52WeekHigh', 'N/A') }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>52-Week Low</th>
+                                        <td>{{ company_info.get('52WeekLow', 'N/A') }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Dividend Yield</th>
+                                        <td>{{ company_info.get('DividendYield', 'N/A') }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Dividend Per Share</th>
+                                        <td>{{ company_info.get('DividendPerShare', 'N/A') }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        <div class="col-md-6 mb-4">
+                            <h4>Quarterly Earnings</h4>
+                            <table class="table table-striped">
+                                <thead>
+                                    <tr>
+                                        <th>Fiscal Date</th>
+                                        <th>Reported EPS</th>
+                                        <th>Estimated EPS</th>
+                                        <th>Surprise %</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for quarter in quarterly_earnings %}
+                                    <tr>
+                                        <td>{{ quarter.get('fiscalDateEnding', 'N/A') }}</td>
+                                        <td>{{ quarter.get('reportedEPS', 'N/A') }}</td>
+                                        <td>{{ quarter.get('estimatedEPS', 'N/A') }}</td>
+                                        <td>
+                                            {% if quarter.get('surprisePercentage') %}
+                                                {% set surprise = quarter.get('surprisePercentage')|float %}
+                                                <span class="{{ 'text-success' if surprise > 0 else 'text-danger' }}">
+                                                    {{ surprise }}%
+                                                </span>
+                                            {% else %}
+                                                N/A
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                    {% else %}
+                                    <tr>
+                                        <td colspan="4" class="text-center">No earnings data available</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        <div class="col-md-12 mb-4">
+                            <h4>Company Description</h4>
+                            <div class="card">
+                                <div class="card-body">
+                                    <p class="card-text">{{ company_info.get('Description', 'No description available.') }}</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ML Features Tab -->
+                <div class="tab-pane fade" id="features" role="tabpanel" aria-labelledby="features-tab">
+                    <div class="row">
+                        <div class="col-md-12 mb-4">
+                            <h4>Machine Learning Features</h4>
+                            <p class="text-muted">Complete feature set available for ML/DL models</p>
+                            
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="card mb-4">
+                                        <div class="card-header bg-primary text-white">
+                                            <h5 class="mb-0">Feature List</h5>
+                                        </div>
+                                        <div class="card-body" style="max-height: 300px; overflow-y: auto;">
+                                            <ul class="list-group">
+                                                {% for feature in features %}
+                                                <li class="list-group-item">{{ feature }}</li>
+                                                {% endfor %}
+                                            </ul>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="col-md-6">
+                                    <div class="card mb-4">
+                                        <div class="card-header bg-success text-white">
+                                            <h5 class="mb-0">Feature Importance</h5>
+                                        </div>
+                                        <div class="card-body">
+                                            <div class="chart-container" style="height: 300px;">
+                                                <!-- Placeholder for actual feature importance chart -->
+                                                <div class="d-flex align-items-center justify-content-center h-100 border rounded bg-light">
+                                                    <div class="text-center">
+                                                        <p class="lead">Feature Importance Visualization</p>
+                                                        <p class="text-muted">ML model feature importance will appear here</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="row">
+                                <div class="col-md-12">
+                                    <div class="card mb-4">
+                                        <div class="card-header bg-info text-white">
+                                            <h5 class="mb-0">Model Training Options</h5>
+                                        </div>
+                                        <div class="card-body">
+                                            <div class="d-flex justify-content-center mb-3 gap-2">
+                                                <a href="{{ url_for('random_forest_analysis', stock=symbol) }}" class="btn btn-success">
+                                                    <i class="fas fa-tree me-1"></i> Train Random Forest
+                                                </a>
+                                                <a href="{{ url_for('xgboost_analysis', stock=symbol) }}" class="btn btn-warning">
+                                                    <i class="fas fa-bolt me-1"></i> Train XGBoost
+                                                </a>
+                                                <a href="{{ url_for('model_comparison', stock=symbol) }}" class="btn btn-primary">
+                                                    <i class="fas fa-chart-bar me-1"></i> Compare Models
+                                                </a>
+                                            </div>
+                                            <p class="text-center text-muted small">
+                                                Models will be trained using all features from the enriched dataset
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Back to Dashboard Button -->
+    <div class="row mt-4 mb-5">
+        <div class="col-md-12 text-center">
+            <a href="{{ url_for('index', stock=symbol) }}" class="btn btn-outline-primary">
+                <i class="fas fa-arrow-left me-1"></i> Back to Dashboard
+            </a>
+        </div>
+    </div>
+</div>
+
+<!-- Custom JavaScript for the page -->
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initialize tab functionality
+        var triggerTabList = [].slice.call(document.querySelectorAll('#analysisTab button'))
+        triggerTabList.forEach(function (triggerEl) {
+            var tabTrigger = new bootstrap.Tab(triggerEl)
+            triggerEl.addEventListener('click', function (event) {
+                event.preventDefault()
+                tabTrigger.show()
+            })
+        })
+        
+        // Chart initialization would go here
+        // Using placeholders for now
+    });
+</script>
+{% endblock %} 
