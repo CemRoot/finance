@@ -1,0 +1,149 @@
+{% extends 'base.html' %}
+
+{% block title %}XGBoost Analysis - {{ stock }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{{ url_for('index') }}">Home</a></li>
+            <li class="breadcrumb-item"><a href="{{ url_for('index', stock=stock) }}">{{ stock }}</a></li>
+            <li class="breadcrumb-item active" aria-current="page">XGBoost Analysis</li>
+        </ol>
+    </nav>
+
+    <h1 class="mb-4">XGBoost {{ model_type|capitalize }} Analysis for {{ stock }}</h1>
+    
+    <div class="row mt-4 g-4">
+        <div class="col-md-6">
+            <div class="card mb-4 shadow-sm">
+                <div class="card-header">
+                    <h5 class="card-title mb-0 fw-semibold"><i class="fas fa-tachometer-alt me-2"></i>Performance Metrics</h5>
+                </div>
+                <div class="card-body">
+                    {% if metrics %}
+                    <table class="table table-striped table-hover table-sm mb-0">
+                        <tbody>
+                            {% for key, value in metrics.items() %}
+                            <tr>
+                                <th scope="row" style="width: 40%;">{{ key }}</th>
+                                <td>{{ value | format_number(4) if value is not none else 'N/A' }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}
+                    <div class="alert alert-warning small">Metrics data is unavailable.</div>
+                    {% endif %}
+                </div>
+                <div class="card-footer text-muted small">
+                    {% if model_type == 'regressor' %}
+                    Metrics calculated on the test set. Lower MAE/RMSE and higher R² (closer to 1) are better. Negative R² indicates poor performance.
+                    {% else %}
+                    Accuracy measures overall correctness. Precision is the ratio of true positives to predicted positives. Recall is the ratio of true positives to all actual positives. F1-Score is the harmonic mean of precision and recall.
+                    {% endif %}
+                </div>
+            </div>
+            
+            <div class="card shadow-sm">
+                <div class="card-header">
+                    <h5 class="card-title mb-0 fw-semibold"><i class="fas fa-list-ol me-2"></i>Feature Importance</h5>
+                </div>
+                <div class="card-body text-center">
+                     {% if feature_importance_path %}
+                        <img src="{{ feature_importance_path }}?t={{ range(1, 1000) | random }}" alt="Feature Importance" class="img-fluid border rounded">
+                    {% else %}
+                         <div class="alert alert-warning small">Feature importance plot could not be generated.</div>
+                    {% endif %}
+                </div>
+                <div class="card-footer text-muted small">
+                    Indicates the relative importance of each feature used by the XGBoost model in making predictions.
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-6">
+            <div class="card mb-4 shadow-sm">
+                <div class="card-header">
+                    <h5 class="card-title mb-0 fw-semibold"><i class="fas fa-chart-bar me-2"></i>Prediction Results</h5>
+                </div>
+                <div class="card-body">
+                    {% if prediction_results %}
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover table-sm small">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Actual</th>
+                                    <th>Predicted</th>
+                                    {% if model_type == 'regressor' %}
+                                    <th>Error</th>
+                                    <th>Error %</th>
+                                    {% else %}
+                                    <th>Correct</th>
+                                    <th>Confidence</th>
+                                    {% endif %}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for result in prediction_results %}
+                                <tr{% if model_type == 'classifier' %} class="{{ 'table-success' if result.correct else 'table-danger' }}"{% endif %}>
+                                    <td>{{ result.date }}</td>
+                                    <td>{{ result.actual }}</td>
+                                    <td>{{ result.predicted }}</td>
+                                    {% if model_type == 'regressor' %}
+                                    <td>{{ result.error }}</td>
+                                    <td>{{ result.error_pct }}%</td>
+                                    {% else %}
+                                    <td><i class="fas {{ 'fa-check text-success' if result.correct else 'fa-times text-danger' }}"></i></td>
+                                    <td>{{ result.confidence }}%</td>
+                                    {% endif %}
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="alert alert-warning small">Prediction results are unavailable.</div>
+                    {% endif %}
+                </div>
+                <div class="card-footer text-muted small">
+                    {% if model_type == 'regressor' %}
+                    Shows the first 10 predictions on the test set, with actual value, predicted value, and error.
+                    {% else %}
+                    Shows the first 10 predictions on the test set, with actual direction, predicted direction, and confidence.
+                    {% endif %}
+                </div>
+            </div>
+            
+            <div class="card shadow-sm">
+                <div class="card-header">
+                    <h5 class="card-title mb-0 fw-semibold"><i class="fas fa-info-circle me-2"></i>About XGBoost</h5>
+                </div>
+                <div class="card-body">
+                    <p class="small">
+                        XGBoost (eXtreme Gradient Boosting) is an advanced implementation of gradient boosting algorithms designed for speed and performance. Key advantages include:
+                    </p>
+                    <ul class="small">
+                        <li><strong>Performance:</strong> Typically performs better than single models like Random Forest</li>
+                        <li><strong>Speed:</strong> Optimized for computational efficiency</li>
+                        <li><strong>Regularization:</strong> Built-in regularization to prevent overfitting</li>
+                        <li><strong>Handling Missing Values:</strong> Can handle missing data automatically</li>
+                        <li><strong>Parallel Processing:</strong> Leverages multiple CPU cores for faster training</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="row mt-4 mb-4">
+        <div class="col-12 text-center">
+            <a href="{{ url_for('index', stock=stock) }}" class="btn btn-outline-secondary me-2"><i class="fas fa-arrow-left me-1"></i>Back to Dashboard</a>
+            <a href="{{ url_for('xgboost_analysis', stock=stock, type='regressor' if model_type == 'classifier' else 'classifier') }}" class="btn btn-primary me-2">
+                <i class="fas fa-exchange-alt me-1"></i>Switch to {{ 'Price Prediction' if model_type == 'classifier' else 'Direction Prediction' }}
+            </a>
+            <a href="{{ url_for('model_comparison', stock=stock) }}" class="btn btn-info"><i class="fas fa-balance-scale me-1"></i>Compare Models</a>
+        </div>
+    </div>
+</div>
+{% endblock %} 

@@ -1,8 +1,7 @@
 # src/sentiment.py
-from transformers import AutoModelForSequenceClassification, AutoTokenizer, pipeline
+from transformers import pipeline
 import torch
 import logging
-import os
 import time
 
 # Configure logger for this module

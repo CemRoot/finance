@@ -1,0 +1,14 @@
+Test Results for AAPL from 2018-01-01 to 2023-01-01
+
+Accuracy: 0.4516
+Precision: 0.4011
+Recall: 0.7030
+F1 Score: 0.5108
+Training Time: 0.13 seconds
+
+Top 5 Important Features:
+MA5_MA20_Ratio: 0.1362
+MA20: 0.1311
+Volatility: 0.1205
+MA5: 0.1030
+Volume: 0.0977

@@ -1,21 +1,27 @@
 # src/model_comparison.py
-import pandas as pd
 import numpy as np
 import matplotlib
 matplotlib.use('Agg') # Use non-interactive backend
 import matplotlib.pyplot as plt
 import os
 import logging
-import yfinance as yf
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-import time
-from typing import Callable, Dict, Any, Optional, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime
+import matplotlib.dates as mdates
+import io
+import time  # Add time module for execution timing
+from src.ml_models import StockPricePredictor
+from src.xgboost_model import XGBoostStockPredictor
+from src.forecasting import get_prophet_forecast
+from src.marketstack_api import MarketstackAPI
+from src.deep_learning import LSTMStockPredictor  # Import LSTM model
+from config import MARKETSTACK_API_KEY
 
 # Assuming ml_models and forecasting are in the same src directory or accessible
 from .ml_models import StockPricePredictor # Relative import
 # Import the specific forecast function needed
 from .forecasting import get_prophet_forecast # Relative import
+# Import the XGBoost model
+from .xgboost_model import XGBoostStockPredictor
 
 # Set up logging
 logging.basicConfig(
@@ -26,464 +32,506 @@ logger = logging.getLogger(__name__)
 
 class ModelComparator:
     """
-    Compares the performance of different time series forecasting models,
-    specifically Prophet and a Random Forest Regressor.
+    A class for comparing different stock price prediction models.
     """
+    
     def __init__(self):
-        self.models: Dict[str, Dict[str, Any]] = {} # Stores trained models/results
-        self.results: Dict[str, Any] = {}           # Stores comparison results
-        self.df_data: Optional[pd.DataFrame] = None # Stores fetched data for reuse
-        self.symbol: Optional[str] = None           # Stores the stock symbol
-
-    def _fetch_data(self, symbol: str, period: str = '5y') -> Optional[pd.DataFrame]:
-        """Fetches and caches stock data using yfinance."""
-        # Reuse cached data if available for the same symbol
-        if self.df_data is not None and self.symbol == symbol:
-             logger.info(f"Using cached data for {symbol}")
-             return self.df_data
-
-        logger.info(f"Fetching data for {symbol} (period: {period})")
-        try:
-            # Download data with yfinance
-            df = yf.download(symbol, period=period)
+        """
+        Initialize the model comparator.
+        """
+        self.models = {
+            'Random Forest': StockPricePredictor(),
+            'XGBoost': XGBoostStockPredictor(),
+            'LSTM': None,  # LSTM model will be created at runtime
+            'Prophet': None  # Prophet is handled separately
+        }
+        self.marketstack = MarketstackAPI(api_key=MARKETSTACK_API_KEY)
+        
+    def _get_data(self, symbol, period='5y'):
+        """
+        Get stock data using Marketstack API.
+        
+        Args:
+            symbol: Stock symbol
+            period: Time period (default: '5y')
             
-            if df.empty:
-                logger.error(f"No historical data returned for {symbol} (period={period}).")
+        Returns:
+            DataFrame with stock data
+        """
+        try:
+            logger.info(f"Fetching data from Marketstack for {symbol}")
+            df = self.marketstack.get_stock_history(symbol, period=period)
+            
+            if df is None or df.empty:
+                logger.warning(f"No data found for {symbol}")
                 return None
             
-            # Reset index to make Date a column
-            df.reset_index(inplace=True)
-            logger.info(f"Downloaded data columns: {df.columns}")
-            logger.info(f"Data types: {df.dtypes}")
+            # Log the data structure to help diagnose issues
+            logger.info(f"Retrieved {len(df)} rows for {symbol} with columns: {df.columns.tolist()}")
+            logger.info(f"Index type: {type(df.index).__name__}")
+            logger.info(f"Sample data: \n{df.head(2).to_string()}")
             
-            # Handle MultiIndex columns that may occur with some symbols
-            if isinstance(df.columns, pd.MultiIndex):
-                logger.info(f"MultiIndex columns detected: {df.columns}")
-                
-                # Create a new flat DataFrame with proper column names
-                new_columns = []
-                for col in df.columns:
-                    if col[0] == 'Date' or col[0] == 'Datetime':
-                        new_columns.append('Date')
-                    elif col[0] == symbol:
-                        # If first level is the symbol, use the second level
-                        new_columns.append(col[1])
-                    else:
-                        # Otherwise use the first level
-                        new_columns.append(col[0])
-                
-                logger.info(f"Flattened columns: {new_columns}")
-                df.columns = new_columns
+            # Ensure column names are standardized
+            if 'Close' not in df.columns:
+                # Try to find a close column with different capitalization
+                close_cols = [col for col in df.columns if col.lower() == 'close']
+                if close_cols:
+                    logger.info(f"Renaming {close_cols[0]} to Close")
+                    df = df.rename(columns={close_cols[0]: 'Close'})
+                else:
+                    logger.error(f"No Close column found in data. Available columns: {df.columns.tolist()}")
+                    return None
             
-            # Ensure Date is datetime type
-            df['Date'] = pd.to_datetime(df['Date'])
-            
-            # Remove timezone if present
-            if df['Date'].dt.tz is not None:
-                df['Date'] = df['Date'].dt.tz_localize(None)
-            
-            # Drop rows with missing Close prices
-            before_dropna = len(df)
-            df.dropna(subset=['Close'], inplace=True)
-            after_dropna = len(df)
-            if before_dropna > after_dropna:
-                logger.info(f"Dropped {before_dropna - after_dropna} rows with missing Close values")
-            
-            # Sort by date for time series consistency
-            df.sort_values('Date', inplace=True)
-            
-            # Final quality check
-            logger.info(f"Successfully fetched and prepared {len(df)} data points for {symbol}")
-            if len(df) < 100:
-                logger.warning(f"Only {len(df)} data points available for {symbol}, which may be insufficient")
-            
-            # Cache the data
-            self.df_data = df
-            self.symbol = symbol
-            return self.df_data
+            return df
             
         except Exception as e:
             logger.error(f"Error fetching data for {symbol}: {e}", exc_info=True)
-            self.df_data = None
-            self.symbol = None
             return None
-
-    def fetch_data(self, symbol: str, period: str = '5y') -> Optional[pd.DataFrame]:
-        """Public method to fetch and cache stock data."""
-        return self._fetch_data(symbol, period)
-
-    def _add_random_forest(self, df: pd.DataFrame, name: str = "Random Forest") -> Dict[str, Any]:
-        """Adds and trains the Random Forest model."""
-        logger.info(f"Initializing and training Random Forest model: {name}")
-        model = StockPricePredictor(model_type='regressor') # Ensure regressor type
-        # Pass the DataFrame with 'Date' column for feature prep
-        # train returns: metrics, X_test, y_test, y_pred, y_pred_proba (None for regressor)
-        results = model.train(df.copy(), auto_optimize=True) # Use copy to avoid modifying original df
-        metrics = results[0]
-        test_data = {'X_test': results[1], 'y_test': results[2], 'y_pred': results[3]}
-
-        self.models[name] = {
-            'instance': model,
-            'type': 'random_forest',
-            'metrics': metrics,
-            'test_data': test_data
-        }
-        logger.info(f"Random Forest model '{name}' added. Metrics: {metrics}")
-        return metrics
-
-    def _add_prophet(self, symbol: str, df: pd.DataFrame = None, name: str = "Prophet") -> Dict[str, Any]:
-        """Adds and runs the Prophet model using the forecasting function."""
-        logger.info(f"Running Prophet forecast for {symbol}: {name}")
+            
+    def _prepare_features(self, df):
+        """
+        Prepare features for model training.
+        
+        Args:
+            df: DataFrame with stock data
+            
+        Returns:
+            DataFrame with features
+        """
+        if len(df) < 100:
+            logger.warning(f"Not enough data points ({len(df)}) to calculate indicators")
+            return df
+            
+        # Calculate technical indicators
         try:
-            # Call the imported forecast function with historical=True to get predictions for past data
-            forecast_data = get_prophet_forecast(symbol, historical=True, periods=30, df=df)
-
-            if forecast_data.get('error'):
-                error_msg = forecast_data['error']
-                logger.error(f"Prophet forecast failed for {symbol}: {error_msg}")
-                self.models[name] = {'type': 'prophet', 'error': error_msg, 'metrics': {}}
-                return {'error': error_msg}
-
-            metrics = forecast_data.get('metrics', {})
-            self.models[name] = {
-                'type': 'prophet',
-                'forecast_data': forecast_data,
-                'metrics': metrics,
-                'comparison_metrics': {}
+            # Moving averages
+            df['SMA_10'] = df['Close'].rolling(window=10).mean()
+            df['SMA_50'] = df['Close'].rolling(window=50).mean()
+            df['SMA_200'] = df['Close'].rolling(window=200).mean()
+            
+            # Exponential moving averages
+            df['EMA_10'] = df['Close'].ewm(span=10, adjust=False).mean()
+            df['EMA_50'] = df['Close'].ewm(span=50, adjust=False).mean()
+            
+            # Price momentum
+            df['Close_Pct_Change'] = df['Close'].pct_change()
+            df['Volume_Pct_Change'] = df['Volume'].pct_change()
+            
+            # Add rolling mean and std of returns
+            df['Return_5d_Mean'] = df['Close_Pct_Change'].rolling(window=5).mean()
+            df['Return_5d_Std'] = df['Close_Pct_Change'].rolling(window=5).std()
+            
+            # Log returns
+            df['Log_Return'] = np.log(df['Close']/df['Close'].shift(1))
+            
+            logger.info("Technical indicators calculated successfully")
+        except Exception as e:
+            logger.error(f"Error calculating technical indicators: {e}", exc_info=True)
+        
+        # Drop NaN values
+        df.dropna(inplace=True)
+        
+        return df
+    
+    def compare_models(self, symbol):
+        """
+        Compare different models for a given stock.
+        
+        Args:
+            symbol: Stock symbol
+            
+        Returns:
+            Dictionary with comparison results
+        """
+        try:
+            # Start timing execution
+            start_time = time.time()
+            
+            # Get data
+            df = self._get_data(symbol)
+            if df is None or df.empty:
+                return {'error': f"No data available for {symbol}"}
+                
+            # Prepare features
+            df = self._prepare_features(df)
+            if len(df) < 100:
+                return {'error': f"Insufficient data for {symbol} after preprocessing"}
+                
+            # Reset index for Prophet
+            df_with_date = df.reset_index()
+                
+            # Results storage
+            results = {
+                'metrics': {},
+                'predictions': {},
+                'model_errors': {},
+                'feature_importance': {}
             }
-            logger.info(f"Prophet model '{name}' added. Internal Metrics: {metrics}")
-            return metrics
-        except Exception as e:
-            logger.error(f"Error running or adding Prophet model for {symbol}: {e}", exc_info=True)
-            self.models[name] = {'type': 'prophet', 'error': str(e), 'metrics': {}}
-            return {'error': str(e)}
-
-    def _align_predictions_for_test_period(self, days: int = 30) -> Optional[Tuple[pd.DatetimeIndex, pd.Series, pd.Series, pd.Series]]:
-        """
-        Aligns RF test predictions with Prophet predictions for the same time period.
-        Returns aligned test dates, actual values, RF predictions, and Prophet predictions.
-        """
-        rf_model_data = self.models.get("Random Forest")
-        prophet_model_data = self.models.get("Prophet")
-
-        if not rf_model_data or not prophet_model_data:
-            logger.error("Cannot align predictions: Missing models.")
-            return None
-        
-        if rf_model_data.get('error') or prophet_model_data.get('error'):
-            logger.error("Cannot align predictions: One or both models had errors.")
-            return None
-        
-        if 'test_data' not in rf_model_data:
-            logger.error("Random Forest test data not available.")
-            return None
-
-        try:
-            # Get Random Forest test data
-            X_test = rf_model_data['test_data']['X_test']
-            y_test = rf_model_data['test_data']['y_test']
-            y_pred_rf = pd.Series(rf_model_data['test_data']['y_pred'], index=y_test.index)
             
-            # Limit to last 'days' days if specified
-            if days and len(y_test) > days:
-                y_test = y_test.iloc[-days:]
-                y_pred_rf = y_pred_rf.iloc[-days:]
-                
-            # Get Prophet predictions
-            forecast_data = prophet_model_data['forecast_data']
-            
-            # Get historical predictions (should include the test period)
-            if 'historical_forecast' in forecast_data:
-                # Create prophet DataFrame with dates as index
-                prophet_df = pd.DataFrame({
-                    'ds': pd.to_datetime(forecast_data['historical_forecast']['dates']),
-                    'yhat': forecast_data['historical_forecast']['values']
-                })
-                prophet_df.set_index('ds', inplace=True)
-                
-                # Convert y_test index to datetime if not already a DatetimeIndex
-                if not isinstance(y_test.index, pd.DatetimeIndex):
-                    logger.info(f"Converting y_test index to datetime. Current type: {type(y_test.index)}")
-                    try:
-                        # Try to get dates from the X_test dataframe and original data
-                        if self.df_data is not None and 'Date' in self.df_data.columns:
-                            # Get dates from the original data using indices from X_test
-                            date_mapping = dict(zip(self.df_data.index, self.df_data['Date']))
-                            date_values = [date_mapping.get(idx) for idx in X_test.index]
-                            date_index = pd.DatetimeIndex(date_values)
-                            y_test.index = date_index
-                            y_pred_rf.index = date_index
-                            logger.info(f"Successfully mapped dates from original data. Sample dates: {y_test.index[:5]}")
-                        else:
-                            # Fallback: Try to convert numeric index to dates by assuming they're sequential
-                            # This is less reliable but better than nothing
-                            logger.warning("No Date column available, attempting fallback date conversion")
-                            prophet_dates = prophet_df.index.sort_values()
-                            if len(prophet_dates) >= len(y_test):
-                                # Use the last len(y_test) dates from prophet
-                                date_index = prophet_dates[-len(y_test):]
-                                y_test.index = date_index
-                                y_pred_rf.index = date_index
-                                logger.info(f"Used sequential prophet dates as fallback. Sample: {y_test.index[:5]}")
-                            else:
-                                logger.error("Insufficient prophet dates for fallback conversion")
-                                return None
-                    except Exception as e:
-                        logger.error(f"Failed to convert y_test index to DatetimeIndex: {e}", exc_info=True)
-                        return None
-
-                # Ensure both have DatetimeIndex
-                if not isinstance(y_test.index, pd.DatetimeIndex) or not isinstance(prophet_df.index, pd.DatetimeIndex):
-                    logger.error(f"Index types not compatible: y_test={type(y_test.index)}, prophet={type(prophet_df.index)}")
-                    return None
-
-                # Align the indices - find common dates between RF test and Prophet predictions
-                common_dates = y_test.index.intersection(prophet_df.index)
-                
-                if len(common_dates) == 0:
-                    logger.error("No common dates between RF test set and Prophet predictions.")
-                    return None
-                    
-                y_test_aligned = y_test.loc[common_dates]
-                y_pred_rf_aligned = y_pred_rf.loc[common_dates]
-                y_pred_prophet_aligned = prophet_df.loc[common_dates, 'yhat']
-                
-                if len(y_test_aligned) < 5:  # Require at least 5 common points for comparison
-                    logger.error(f"Insufficient overlapping data points: {len(y_test_aligned)}, need at least 5")
-                    return None
-                    
-                logger.info(f"Successfully aligned {len(y_test_aligned)} data points for comparison")
-                logger.info(f"Sample dates: {common_dates[:5]}")
-                return common_dates, y_test_aligned, y_pred_rf_aligned, y_pred_prophet_aligned
-            else:
-                logger.error("No historical forecast data available from Prophet.")
-                return None
-                
-        except Exception as e:
-            logger.error(f"Error aligning predictions: {e}", exc_info=True)
-            return None
-
-    def compare_models(self, symbol: str, df: Optional[pd.DataFrame] = None, days_to_compare: int = 30) -> Dict[str, Any]:
-        """Compares Prophet and Random Forest predictions against actual values."""
-        self.symbol = symbol # Store symbol for later use
-        if df is None:
-            df = self._fetch_data(symbol, period='5y')
-            if df is None: return {'error': f'Could not fetch data for {symbol}'}
-        elif self.df_data is None: # Store provided data
-             self.df_data = df
-
-        logger.info(f"Comparing prediction models for {symbol} over last {days_to_compare} days.")
-
-        try:
-            # Ensure both models are loaded/trained
-            if "Random Forest" not in self.models: 
-                self._add_random_forest(df)
-            
-            # Only add Prophet model after Random Forest so we know the test period
-            if "Prophet" not in self.models: 
-                self._add_prophet(symbol, df)
-
-            # Check for errors during model addition
-            if self.models.get("Random Forest", {}).get('error') or self.models.get("Prophet", {}).get('error'):
-                 return {'error': f"One or more models failed to initialize for {symbol}.",
-                         'rf_error': self.models.get("Random Forest", {}).get('error'),
-                         'prophet_error': self.models.get("Prophet", {}).get('error')}
-
-            # Align predictions
-            aligned_data = self._align_predictions_for_test_period(days=days_to_compare)
-            if aligned_data is None:
-                 return {'error': f"Could not align predictions for {symbol}."}
-
-            dates, y_test, y_pred_rf, y_pred_prophet = aligned_data
-
-            # Calculate comparison metrics
+            # Train and evaluate Random Forest
             try:
-                rf_mae = mean_absolute_error(y_test, y_pred_rf)
-                rf_rmse = np.sqrt(mean_squared_error(y_test, y_pred_rf))
-                rf_r2 = r2_score(y_test, y_pred_rf)
-
-                prophet_mae = mean_absolute_error(y_test, y_pred_prophet)
-                prophet_rmse = np.sqrt(mean_squared_error(y_test, y_pred_prophet))
-                prophet_r2 = r2_score(y_test, y_pred_prophet)
-
-                # Store these comparison-specific metrics separately
-                self.models['Random Forest']['comparison_metrics'] = {'MAE': rf_mae, 'RMSE': rf_rmse, 'R2': rf_r2}
-                self.models['Prophet']['comparison_metrics'] = {'MAE': prophet_mae, 'RMSE': prophet_rmse, 'R2': prophet_r2}
-
-                # Calculate differences (Prophet - RF)
-                comparison_metrics = {
-                    'Random Forest': self.models['Random Forest']['comparison_metrics'],
-                    'Prophet': self.models['Prophet']['comparison_metrics'],
-                    'Difference': {
-                        'MAE': prophet_mae - rf_mae,
-                        'RMSE': prophet_rmse - rf_rmse,
-                        'R2': prophet_r2 - rf_r2
-                    }
-                }
-                self.results['comparison_metrics'] = comparison_metrics
-                self.results['aligned_data'] = {
-                    'dates': dates,
-                    'y_test': y_test,
-                    'y_pred_rf': y_pred_rf,
-                    'y_pred_prophet': y_pred_prophet
-                }
-                logger.info(f"Model comparison metrics calculated for {symbol}")
-                return comparison_metrics
+                logger.info("Training Random Forest model")
+                rf_result = self.models['Random Forest'].train(df)
+                if isinstance(rf_result, tuple) and len(rf_result) >= 4:
+                    rf_metrics = rf_result[0]  # Extract metrics 
+                    X_test_rf = rf_result[1]   # Extract test features
+                    y_test_rf = rf_result[2]   # Extract test targets
+                    y_pred_rf = rf_result[3]   # Extract predictions
+                else:
+                    logger.warning(f"RandomForest train() returned unexpected format: {type(rf_result)}")
+                    rf_metrics = rf_result if isinstance(rf_result, dict) else {}
+                    X_test_rf = pd.DataFrame()
+                    y_test_rf = []
+                    y_pred_rf = []
                 
-            except Exception as metric_err:
-                 logger.error(f"Error calculating comparison metrics: {metric_err}", exc_info=True)
-                 return {'error': f"Error calculating comparison metrics: {str(metric_err)}"}
-                 
+                if not rf_metrics:
+                    logger.warning("Random Forest model returned no metrics")
+                    results['model_errors']['Random Forest'] = "No metrics returned from model"
+                else:
+                    # Ensure uppercase keys for metrics
+                    results['metrics']['Random Forest'] = {
+                        'RMSE': rf_metrics.get('RMSE', rf_metrics.get('rmse', 0)),
+                        'MAE': rf_metrics.get('MAE', rf_metrics.get('mae', 0)),
+                        'R2': rf_metrics.get('R2', rf_metrics.get('r2', 0))
+                    }
+                    
+                    if not X_test_rf.empty and len(y_test_rf) > 0 and len(y_pred_rf) > 0:
+                        results['predictions']['Random Forest'] = {
+                            'actual': y_test_rf if isinstance(y_test_rf, list) else y_test_rf.tolist(),
+                            'predicted': y_pred_rf if isinstance(y_pred_rf, list) else y_pred_rf.tolist(),
+                            'dates': X_test_rf.index.strftime('%Y-%m-%d').tolist() if hasattr(X_test_rf.index, 'strftime') else [str(x) for x in X_test_rf.index]
+                        }
+                    
+                    # Safely get feature importance
+                    try:
+                        results['feature_importance']['Random Forest'] = self.models['Random Forest'].get_feature_importance()
+                    except (AttributeError, Exception) as fe:
+                        logger.warning(f"Could not get RandomForest feature importance: {fe}")
+                        
+                    logger.info("Random Forest model trained successfully")
+            except Exception as e:
+                logger.error(f"Error training Random Forest model: {e}", exc_info=True)
+                results['model_errors']['Random Forest'] = str(e)
+            
+            # Train and evaluate XGBoost
+            try:
+                logger.info("Training XGBoost model")
+                xgb_result = self.models['XGBoost'].train(df)
+                if isinstance(xgb_result, tuple) and len(xgb_result) >= 5:
+                    xgb_metrics = xgb_result[0]  # Extract metrics
+                    X_test_xgb = xgb_result[1]   # Extract test features
+                    y_test_xgb = xgb_result[2]   # Extract test targets
+                    y_pred_xgb = xgb_result[3]   # Extract predictions
+                    model = xgb_result[4]        # Extract model (if returned)
+                else:
+                    logger.warning(f"XGBoost train() returned unexpected format: {type(xgb_result)}")
+                    xgb_metrics = xgb_result if isinstance(xgb_result, dict) else {}
+                    X_test_xgb = pd.DataFrame()
+                    y_test_xgb = []
+                    y_pred_xgb = []
+                    model = None
+                
+                if not xgb_metrics:
+                    logger.warning("XGBoost model returned no metrics")
+                    results['model_errors']['XGBoost'] = "No metrics returned from model"
+                else:
+                    # Ensure uppercase keys for metrics
+                    results['metrics']['XGBoost'] = {
+                        'RMSE': xgb_metrics.get('RMSE', xgb_metrics.get('rmse', 0)),
+                        'MAE': xgb_metrics.get('MAE', xgb_metrics.get('mae', 0)),
+                        'R2': xgb_metrics.get('R2', xgb_metrics.get('r2', 0))
+                    }
+                    
+                    if not X_test_xgb.empty and len(y_test_xgb) > 0 and len(y_pred_xgb) > 0:
+                        results['predictions']['XGBoost'] = {
+                            'actual': y_test_xgb if isinstance(y_test_xgb, list) else y_test_xgb.tolist(),
+                            'predicted': y_pred_xgb if isinstance(y_pred_xgb, list) else y_pred_xgb.tolist(),
+                            'dates': X_test_xgb.index.strftime('%Y-%m-%d').tolist() if hasattr(X_test_xgb.index, 'strftime') else [str(x) for x in X_test_xgb.index]
+                        }
+                    
+                    # Safely get feature importance - handle the missing method
+                    try:
+                        # Try the actual method name first
+                        if hasattr(self.models['XGBoost'], 'get_feature_importance'):
+                            results['feature_importance']['XGBoost'] = self.models['XGBoost'].get_feature_importance()
+                        # Fall back to plot_feature_importance if available
+                        elif hasattr(self.models['XGBoost'], 'plot_feature_importance'):
+                            # Just get the feature importances without plotting
+                            # This is a workaround since the method exists but with a different name
+                            feature_imp = {}
+                            # Check if model has feature_importances_ attribute (XGBoost models do)
+                            if hasattr(self.models['XGBoost'], 'model') and hasattr(self.models['XGBoost'].model, 'feature_importances_'):
+                                # Get feature names if available
+                                feature_names = getattr(self.models['XGBoost'], 'feature_names', None)
+                                if feature_names is None and hasattr(X_test_xgb, 'columns'):
+                                    feature_names = X_test_xgb.columns.tolist()
+                                else:
+                                    feature_names = [f'feature_{i}' for i in range(len(self.models['XGBoost'].model.feature_importances_))]
+                                
+                                # Create feature importance dict with up to top 5 features
+                                top_indices = np.argsort(self.models['XGBoost'].model.feature_importances_)[-5:]
+                                for idx in top_indices:
+                                    if idx < len(feature_names):
+                                        feature_imp[feature_names[idx]] = float(self.models['XGBoost'].model.feature_importances_[idx])
+                                
+                                results['feature_importance']['XGBoost'] = feature_imp
+                    except (AttributeError, Exception) as fe:
+                        logger.warning(f"Could not get XGBoost feature importance: {fe}")
+                    
+                    logger.info("XGBoost model trained successfully")
+            except Exception as e:
+                logger.error(f"Error training XGBoost model: {e}", exc_info=True)
+                results['model_errors']['XGBoost'] = str(e)
+            
+            # Train and evaluate Prophet
+            try:
+                logger.info("Training Prophet model")
+                # Pass the prepared dataframe to Prophet to use Marketstack data instead of fetching again
+                prophet_result = get_prophet_forecast(symbol, periods=30, df=df_with_date)
+                if 'error' in prophet_result:
+                    results['model_errors']['Prophet'] = prophet_result['error']
+                else:
+                    # Extract metrics from prophet_result
+                    prophet_metrics = prophet_result.get('metrics', {})
+                    if not prophet_metrics:
+                        logger.warning("Prophet model returned no metrics")
+                        results['model_errors']['Prophet'] = "No metrics returned from model"
+                    else:
+                        # Ensure uppercase keys for metrics
+                        results['metrics']['Prophet'] = {
+                            'RMSE': prophet_metrics.get('RMSE', prophet_metrics.get('rmse', 0)),
+                            'MAE': prophet_metrics.get('MAE', prophet_metrics.get('mae', 0)),
+                            'R2': prophet_metrics.get('R2', prophet_metrics.get('r2', 0))
+                        }
+                    
+                    # Get the forecast values
+                    forecast_data = prophet_result.get('forecast_values', {})
+                    if forecast_data:
+                        results['predictions']['Prophet'] = {
+                            'dates': forecast_data.get('dates', []),
+                            'predicted': forecast_data.get('values', []),
+                            'upper_bound': forecast_data.get('upper_bound', []),
+                            'lower_bound': forecast_data.get('lower_bound', [])
+                        }
+                logger.info("Prophet model trained successfully")
+            except Exception as e:
+                logger.error(f"Error training Prophet model: {e}", exc_info=True)
+                results['model_errors']['Prophet'] = str(e)
+            
+            # Train and evaluate LSTM
+            try:
+                logger.info("Training LSTM model")
+                lstm_model = LSTMStockPredictor(sequence_length=30, batch_size=32, epochs=50)
+                
+                # Copy and reset index to ensure we have a proper date column
+                lstm_df = df.copy().reset_index()
+                
+                # Train the model
+                lstm_result = lstm_model.train(lstm_df, lstm_units=50, dropout_rate=0.2, architecture='simple')
+                
+                if not lstm_result or 'metrics' not in lstm_result:
+                    logger.warning("LSTM model returned no metrics")
+                    results['model_errors']['LSTM'] = "No metrics returned from model"
+                else:
+                    # Extract metrics
+                    lstm_metrics = lstm_result.get('metrics', {})
+                    
+                    # Ensure uppercase keys for metrics
+                    results['metrics']['LSTM'] = {
+                        'RMSE': lstm_metrics.get('RMSE', lstm_metrics.get('rmse', 0)),
+                        'MAE': lstm_metrics.get('MAE', lstm_metrics.get('mae', 0)),
+                        'R2': lstm_metrics.get('R2', lstm_metrics.get('r2', 0))
+                    }
+                    
+                    # Get prediction data
+                    prediction_data = lstm_result.get('predictions', {})
+                    if prediction_data:
+                        # Process predictions to match expected format
+                        pred_dates = prediction_data.get('dates', [])
+                        results['predictions']['LSTM'] = {
+                            'dates': pred_dates,
+                            'actual': prediction_data.get('actual', []),
+                            'predicted': prediction_data.get('predicted', [])
+                        }
+                    
+                    # Get feature importance if available
+                    if 'feature_importance' in lstm_result:
+                        results['feature_importance']['LSTM'] = lstm_result['feature_importance']
+                    
+                logger.info("LSTM model trained successfully")
+            except Exception as e:
+                logger.error(f"Error training LSTM model: {e}", exc_info=True)
+                results['model_errors']['LSTM'] = str(e)
+            
+            # Add best model determination based on metrics
+            if results['metrics']:
+                try:
+                    # Find the model with the lowest RMSE (primary metric)
+                    models_with_metrics = {model: metrics for model, metrics in results['metrics'].items() 
+                                          if 'RMSE' in metrics and metrics['RMSE'] > 0}
+                    
+                    if models_with_metrics:
+                        best_model = min(models_with_metrics.items(), 
+                                         key=lambda x: x[1]['RMSE'])
+                        results['best_model'] = best_model[0]
+                        
+                        # Add comparison metadata
+                        results['days_compared'] = len(next(iter(results['predictions'].values()))['dates']) if results['predictions'] else 0
+                        results['model_metrics'] = results['metrics']  # For template compatibility
+                        logger.info(f"Best model determined: {results['best_model']}")
+                    else:
+                        logger.warning("No models with valid RMSE metrics found")
+                except Exception as e:
+                    logger.error(f"Error determining best model: {e}", exc_info=True)
+            else:
+                logger.warning("No metrics available to determine best model")
+            
+            # Generate comparison plots
+            try:
+                logger.info("Generating comparison plots")
+                plot_path = self._generate_comparison_plot(results, symbol)
+                results['plot_path'] = plot_path
+                
+                performance_plot_path = self._generate_performance_plot(results, symbol)
+                results['performance_plot_path'] = performance_plot_path
+                logger.info("Comparison plots generated successfully")
+            except Exception as e:
+                logger.error(f"Error generating comparison plots: {e}", exc_info=True)
+                results['plot_error'] = str(e)
+            
+            # Calculate execution time and add to results
+            execution_time = time.time() - start_time
+            results['execution_time'] = execution_time
+            logger.info(f"Model comparison completed in {execution_time:.2f} seconds")
+            
+            return results
+            
         except Exception as e:
-            logger.error(f"Error in compare_models: {e}", exc_info=True)
-            return {'error': f"Model comparison failed: {str(e)}"}
-
-    def plot_comparison(self, days_to_plot: int = 30) -> Dict[str, Any]:
+            logger.error(f"Error comparing models for {symbol}: {e}", exc_info=True)
+            return {'error': str(e)}
+    
+    def _generate_comparison_plot(self, results, symbol):
         """
-        Creates a plot comparing the actual values with predictions from both models.
+        Generate a comparison plot for the predictions.
+        
+        Args:
+            results: Dictionary with comparison results
+            symbol: Stock symbol
+            
+        Returns:
+            Path to the saved plot
         """
-        if not self.results.get('aligned_data'):
-            logger.error("No aligned data available for plotting. Run compare_models first.")
-            return {'error': "No comparison data available. Run compare_models first."}
-
-        # Ensure output directory exists
-        os.makedirs('static/images', exist_ok=True)
-        fig_path = f'static/images/model_comparison_{int(time.time())}.png'
-
         try:
-            # Get data from the alignment
-            aligned_data = self.results['aligned_data']
-            dates = aligned_data['dates']
-            y_test = aligned_data['y_test']
-            y_pred_rf = aligned_data['y_pred_rf']
-            y_pred_prophet = aligned_data['y_pred_prophet']
-
-            # Limit to the specified days if needed
-            if days_to_plot and len(dates) > days_to_plot:
-                # Take the most recent days_to_plot days
-                dates = dates[-days_to_plot:]
-                y_test = y_test.loc[dates]
-                y_pred_rf = y_pred_rf.loc[dates]
-                y_pred_prophet = y_pred_prophet.loc[dates]
-
-            # Create the comparison plot
-            plt.figure(figsize=(12, 6))
-            plt.plot(dates, y_test, 'o-', label='Actual', color='black', alpha=0.7)
-            plt.plot(dates, y_pred_rf, 's-', label='Random Forest', color='blue', alpha=0.7)
-            plt.plot(dates, y_pred_prophet, '^-', label='Prophet', color='red', alpha=0.7)
+            plt.figure(figsize=(12, 8))
             
-            # Format x-axis to show dates clearly
-            plt.gcf().autofmt_xdate()
+            colors = {
+                'Random Forest': 'forestgreen',
+                'XGBoost': 'darkorange',
+                'LSTM': 'purple',  # Add color for LSTM
+                'Prophet': 'royalblue'
+            }
             
-            plt.title(f'{self.symbol} Price Prediction Comparison')
+            # Plot each model's predictions
+            for model_name, color in colors.items():
+                if model_name in results['predictions']:
+                    pred_data = results['predictions'][model_name]
+                    dates = pred_data['dates']
+                    
+                    # Convert string dates to datetime
+                    if isinstance(dates[0], str):
+                        dates = [datetime.strptime(d, '%Y-%m-%d') for d in dates]
+                    
+                    plt.plot(dates, pred_data['actual'], '-', color='gray', alpha=0.5)
+                    plt.plot(dates, pred_data['predicted'], '-', color=color, label=f"{model_name} Predictions")
+            
+            # Add labels and title
             plt.xlabel('Date')
-            plt.ylabel('Price')
+            plt.ylabel('Stock Price')
+            plt.title(f'Model Comparison for {symbol}')
             plt.legend()
             plt.grid(True, alpha=0.3)
-            plt.tight_layout()
             
-            # Save the figure
-            plt.savefig(fig_path)
+            # Format x-axis dates
+            plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+            plt.gca().xaxis.set_major_locator(mdates.AutoDateLocator())
+            plt.xticks(rotation=45)
+            
+            # Save plot to memory
+            buf = io.BytesIO()
+            plt.tight_layout()
+            plt.savefig(buf, format='png', dpi=100)
+            buf.seek(0)
+            
+            # Save plot to disk
+            plot_dir = os.path.join('static', 'images', 'analysis', 'models')
+            os.makedirs(plot_dir, exist_ok=True)
+            timestamp = int(datetime.now().timestamp())
+            plot_path = os.path.join(plot_dir, f'comparison_{symbol}_{timestamp}.png')
+            plt.savefig(plot_path, format='png', dpi=100)
             plt.close()
             
-            return {
-                'image_path': fig_path,
-                'symbol': self.symbol,
-                'dates': [d.strftime('%Y-%m-%d') for d in dates]
-            }
+            # Convert to relative path for the template
+            return plot_path.replace('static/', '')
             
         except Exception as e:
-            logger.error(f"Error creating comparison plot: {e}", exc_info=True)
-            return {'error': f"Failed to create comparison plot: {str(e)}"}
-
-    def plot_performance_comparison(self) -> Dict[str, Any]:
+            logger.error(f"Error generating comparison plot: {e}", exc_info=True)
+            return None
+    
+    def _generate_performance_plot(self, results, symbol):
         """
-        Creates a bar chart comparing the performance metrics of both models.
+        Generate a performance comparison plot.
+        
+        Args:
+            results: Dictionary with comparison results
+            symbol: Stock symbol
+            
+        Returns:
+            Path to the saved plot
         """
-        if not self.results.get('comparison_metrics'):
-            logger.error("No comparison metrics available for plotting. Run compare_models first.")
-            return {'error': "No comparison metrics available. Run compare_models first."}
-
-        # Ensure output directory exists
-        os.makedirs('static/images', exist_ok=True)
-        fig_path = f'static/images/performance_comparison_{int(time.time())}.png'
-
         try:
-            metrics = self.results['comparison_metrics']
+            models = [model for model in results['metrics'].keys()]
+            if not models:
+                return None
+                
+            metrics = ['RMSE', 'MAE', 'R2']
+            metrics_display = ['RMSE', 'MAE', 'R²']
+            colors = ['crimson', 'navy', 'forestgreen']
             
-            # Extract metrics for plotting
-            rf_metrics = metrics['Random Forest']
-            prophet_metrics = metrics['Prophet']
+            fig, axes = plt.subplots(1, len(metrics), figsize=(15, 5))
             
-            metrics_to_plot = ['MAE', 'RMSE']  # Skip R2 in bar chart as it can be negative
+            for i, metric in enumerate(metrics):
+                ax = axes[i]
+                values = [results['metrics'][model].get(metric, 0) for model in models]
+                
+                # Special handling for R²
+                if metric == 'R2':
+                    values = [max(0, min(v, 1)) for v in values]  # Clip to [0, 1]
+                    
+                ax.bar(models, values, color=colors[i], alpha=0.7)
+                ax.set_title(f"{metrics_display[i]}")
+                ax.set_ylim(bottom=0)
+                
+                # Rotate x-axis labels
+                ax.set_xticklabels(models, rotation=45, ha='right')
+                
+                # Add value labels on top of each bar
+                for j, v in enumerate(values):
+                    ax.text(j, v + 0.01, f"{v:.3f}", ha='center')
             
-            # Create figure with 2 subplots: bar chart for MAE/RMSE and separate for R2
-            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6), gridspec_kw={'width_ratios': [2, 1]})
-            
-            # Bar chart for MAE and RMSE
-            x = np.arange(len(metrics_to_plot))
-            width = 0.35
-            
-            rf_values = [rf_metrics[m] for m in metrics_to_plot]
-            prophet_values = [prophet_metrics[m] for m in metrics_to_plot]
-            
-            ax1.bar(x - width/2, rf_values, width, label='Random Forest', color='blue', alpha=0.7)
-            ax1.bar(x + width/2, prophet_values, width, label='Prophet', color='red', alpha=0.7)
-            
-            # Add value annotations above bars
-            for i, v in enumerate(rf_values):
-                ax1.text(i - width/2, v + 0.1, f'{v:.2f}', ha='center', fontsize=9)
-            for i, v in enumerate(prophet_values):
-                ax1.text(i + width/2, v + 0.1, f'{v:.2f}', ha='center', fontsize=9)
-            
-            ax1.set_xticks(x)
-            ax1.set_xticklabels(metrics_to_plot)
-            ax1.set_ylabel('Value (lower is better)')
-            ax1.set_title('Error Metrics Comparison')
-            ax1.legend()
-            ax1.grid(True, alpha=0.3)
-            
-            # Separate plot for R2 (can be negative)
-            x2 = ['R²']
-            rf_r2 = [rf_metrics['R2']]
-            prophet_r2 = [prophet_metrics['R2']]
-            
-            ax2.bar([0 - width/2], rf_r2, width, label='Random Forest', color='blue', alpha=0.7)
-            ax2.bar([0 + width/2], prophet_r2, width, label='Prophet', color='red', alpha=0.7)
-            
-            # Add value annotations
-            ax2.text(0 - width/2, rf_r2[0] + 0.02, f'{rf_r2[0]:.2f}', ha='center', fontsize=9)
-            ax2.text(0 + width/2, prophet_r2[0] + 0.02, f'{prophet_r2[0]:.2f}', ha='center', fontsize=9)
-            
-            ax2.set_xticks([0])
-            ax2.set_xticklabels(x2)
-            ax2.set_ylabel('Value (higher is better)')
-            ax2.set_title('R² Score Comparison')
-            ax2.grid(True, alpha=0.3)
-            
-            # Add horizontal line at y=0 for R² plot
-            ax2.axhline(y=0, color='black', linestyle='--', alpha=0.5)
-            
-            # Adjust the y-range to ensure all bars and annotations are visible
-            ax1.set_ylim(0, max(max(rf_values), max(prophet_values)) * 1.2)  # 20% margin
-            r2_max = max(max(rf_r2), max(prophet_r2), 0.1)  # At least 0.1 for visibility
-            r2_min = min(min(rf_r2), min(prophet_r2), 0)
-            ax2.set_ylim(r2_min - 0.2, r2_max + 0.2)  # Add margin
-            
-            plt.suptitle(f'{self.symbol} Model Performance Comparison', fontsize=16)
+            plt.suptitle(f'Model Performance Comparison for {symbol}')
             plt.tight_layout()
-            plt.subplots_adjust(top=0.9)
             
-            # Save the figure
-            plt.savefig(fig_path)
+            # Save plot to disk
+            plot_dir = os.path.join('static', 'images', 'analysis', 'models')
+            os.makedirs(plot_dir, exist_ok=True)
+            timestamp = int(datetime.now().timestamp())
+            plot_path = os.path.join(plot_dir, f'performance_{symbol}_{timestamp}.png')
+            plt.savefig(plot_path, format='png', dpi=100)
             plt.close()
             
-            return {
-                'image_path': fig_path,
-                'metrics': metrics,
-                'symbol': self.symbol
-            }
+            # Convert to relative path for the template
+            return plot_path.replace('static/', '')
             
         except Exception as e:
-            logger.error(f"Error creating performance comparison plot: {e}", exc_info=True)
-            return {'error': f"Failed to create performance plot: {str(e)}"}
+            logger.error(f"Error generating performance plot: {e}", exc_info=True)
+            return None

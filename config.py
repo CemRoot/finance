@@ -1,44 +1,69 @@
 # config.py
 import os
+import logging
 
 # --- API Keys & Endpoints ---
 
-# EventRegistry API Key (Used for News Fetching)
-# Get from environment variable 'EVENTREGISTRY_API_KEY' or use the provided default.
-# Note: It's best practice to use environment variables for sensitive keys.
-NEWSAPI_KEY = os.environ.get('EVENTREGISTRY_API_KEY', '7c13d593-f204-4d98-9ac4-75ee489a336d') # Replace default if needed Do NOT THING THIS IS REAL API KEY IM NOT STUPID :)
+# Marketstack API Key (Used for Stock Data)
+# Get from environment variable 'MARKETSTACK_API_KEY'
+MARKETSTACK_API_KEY = os.environ.get('MARKETSTACK_API_KEY')
 
-# EventRegistry API Endpoint for fetching news articles
+# EventRegistry API Key (Used for News Fetching)
+# Get from environment variable 'EVENTREGISTRY_API_KEY'
+NEWSAPI_KEY = os.environ.get('EVENTREGISTRY_API_KEY')
+
+# API Endpoints
 NEWSAPI_ENDPOINT = 'https://eventregistry.org/api/v1/article/getArticles'
+MARKETSTACK_BASE_URL = 'https://api.marketstack.com/v2'
 
 # --- Timeouts and Intervals ---
 
 # API Request Timeout (seconds)
-# How long to wait for a response from external APIs (NewsAPI, potentially others)
-API_TIMEOUT = 10  # Increased slightly for potentially slower APIs
+API_TIMEOUT = 30  # Increased for slower API responses
 
-# yfinance Request Rate Limit (seconds)
-# Minimum time interval between consecutive calls to yfinance to avoid being rate-limited.
-# Adjust based on observed behavior; too low might cause 429 errors.
-YFINANCE_MIN_INTERVAL = 2 # Reduced slightly, adjust if rate limited
+# Marketstack Request Rate Limits
+MARKETSTACK_REQUESTS_PER_SECOND = 5  # Free plan allows 5 requests per second
+
+# --- Cache Configuration ---
+CACHE_DEFAULT_TIMEOUT = 300  # 5 minutes
+STOCK_DATA_CACHE_TIMEOUT = 900  # 15 minutes
+NEWS_CACHE_TIMEOUT = 1800  # 30 minutes
+FORECAST_CACHE_TIMEOUT = 3600  # 1 hour
+
+# --- Error Messages ---
+ERROR_MESSAGES = {
+    'missing_api_key': 'API key is missing. Please set the {} environment variable.',
+    'rate_limit': 'Rate limit exceeded. Please try again in {} seconds.',
+    'api_error': 'API error occurred: {}',
+    'no_data': 'No data available for symbol: {}'
+}
+
+# --- Input Validation ---
+def validate_api_keys():
+    logger = logging.getLogger(__name__)
+    
+    if not MARKETSTACK_API_KEY:
+        logger.error(ERROR_MESSAGES['missing_api_key'].format('MARKETSTACK_API_KEY'))
+        raise ValueError(ERROR_MESSAGES['missing_api_key'].format('MARKETSTACK_API_KEY'))
+    
+    if not NEWSAPI_KEY:
+        logger.error(ERROR_MESSAGES['missing_api_key'].format('EVENTREGISTRY_API_KEY'))
+        raise ValueError(ERROR_MESSAGES['missing_api_key'].format('EVENTREGISTRY_API_KEY'))
+
+# Validate API keys on import
+validate_api_keys()
+
+# --- Marketstack API Configuration ---
+MARKETSTACK_CONFIG = {
+    'eod_endpoint': '/eod',
+    'intraday_endpoint': '/intraday/latest',
+    'max_symbols_per_request': 100,
+    'max_limit_per_request': 1000,
+    'supported_intervals': ['1d'],  # EOD API only supports daily data
+    'default_sort': 'DESC'  # Newest first
+}
 
 # --- Model Configuration (Optional) ---
 # You could place model-related configurations here if needed,
 # although they are currently handled within their respective modules.
 # Example: FINBERT_MODEL_NAME = "ProsusAI/finbert"
-
-# --- Input Validation / Sanity Check ---
-# Optional: Check if the essential API key is present and log a warning if not.
-if NEWSAPI_KEY == 'YOUR_DEFAULT_EVENTREGISTRY_API_KEY_HERE' or not NEWSAPI_KEY:
-    import logging
-    logger = logging.getLogger(__name__) # Use logger if available
-    # Check if logger has handlers to avoid errors during startup if logging isn't configured yet
-    if logger.hasHandlers():
-         logger.warning("NEWSAPI_KEY is using the default value or is not set. "
-                        "Please set the EVENTREGISTRY_API_KEY environment variable "
-                        "or update the default value in config.py for news fetching to work.")
-    else:
-        # Fallback to print if logging isn't ready
-        print("WARNING: NEWSAPI_KEY is using the default value or is not set. "
-              "Please set the EVENTREGISTRY_API_KEY environment variable "
-              "or update the default value in config.py for news fetching to work.")

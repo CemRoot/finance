@@ -12,22 +12,34 @@
         </ol>
     </nav>
 
-    <h1>Model Comparison for {{ stock }}</h1>
+    <h1 class="mb-4">Model Comparison for {{ stock }}</h1>
+    
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="alert alert-info">
+                <i class="fas fa-info-circle me-2"></i>
+                {{ description }}
+            </div>
+        </div>
+    </div>
     
     <div class="row mt-4">
         <div class="col-md-12">
             <div class="card mb-4 shadow-sm">
                 <div class="card-header bg-light">
-                    <h5 class="card-title mb-0">Prediction Comparison</h5>
+                    <h5 class="card-title mb-0"><i class="fas fa-chart-line me-2"></i>Price Prediction Comparison</h5>
                 </div>
-                <div class="card-body">
-                    {% if comparison_image %}
-                        <img src="{{ comparison_image }}" alt="Model Comparison" class="img-fluid rounded">
+                <div class="card-body text-center">
+                    {% if plot_url %}
+                        <img src="/static/{{ plot_url }}?t={{ range(1, 1000) | random }}" alt="Model Comparison" class="img-fluid rounded">
                     {% else %}
                         <div class="alert alert-warning">
-                            <i class="fas fa-exclamation-triangle"></i> Unable to generate comparison chart. There may be insufficient data or alignment issues between models.
+                            <i class="fas fa-exclamation-triangle me-2"></i> Unable to generate comparison chart. There may be insufficient data or alignment issues between models.
                         </div>
                     {% endif %}
+                </div>
+                <div class="card-footer text-muted small">
+                    This chart shows how each model's predictions compare to actual prices over the same time period.
                 </div>
             </div>
         </div>
@@ -37,16 +49,19 @@
         <div class="col-md-6">
             <div class="card mb-4 shadow-sm">
                 <div class="card-header bg-light">
-                    <h5 class="card-title mb-0">Performance Metrics Comparison</h5>
+                    <h5 class="card-title mb-0"><i class="fas fa-chart-bar me-2"></i>Performance Metrics Comparison</h5>
                 </div>
-                <div class="card-body">
-                    {% if performance_image %}
-                        <img src="{{ performance_image }}" alt="Performance Comparison" class="img-fluid rounded">
+                <div class="card-body text-center">
+                    {% if performance_plot_url %}
+                        <img src="/static/{{ performance_plot_url }}?t={{ range(1, 1000) | random }}" alt="Performance Comparison" class="img-fluid rounded">
                     {% else %}
                         <div class="alert alert-warning">
-                            <i class="fas fa-exclamation-triangle"></i> Unable to generate performance metrics chart. There may be issues with model evaluation.
+                            <i class="fas fa-exclamation-triangle me-2"></i> Unable to generate performance metrics chart. There may be issues with model evaluation.
                         </div>
                     {% endif %}
+                </div>
+                <div class="card-footer text-muted small">
+                    Bar charts showing how each model performs according to different error metrics. Lower RMSE/MAE and higher R² values indicate better performance.
                 </div>
             </div>
         </div>
@@ -54,69 +69,40 @@
         <div class="col-md-6">
             <div class="card mb-4 shadow-sm">
                 <div class="card-header bg-light">
-                    <h5 class="card-title mb-0">Detailed Metrics</h5>
+                    <h5 class="card-title mb-0"><i class="fas fa-table me-2"></i>Detailed Metrics</h5>
                 </div>
                 <div class="card-body">
-                    {% if metrics and metrics.get('Random Forest') and metrics.get('Prophet') %}
+                    {% if comparison and comparison.model_metrics %}
                         <div class="table-responsive">
                             <table class="table table-striped table-hover">
                                 <thead class="table-light">
                                     <tr>
-                                        <th>Metric</th>
-                                        <th>Random Forest</th>
-                                        <th>Prophet</th>
-                                        <th>Difference</th>
+                                        <th>Model</th>
+                                        <th>RMSE</th>
+                                        <th>MAE</th>
+                                        <th>R²</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {% for metric in ['MAE', 'RMSE', 'R2'] %}
-                                        <tr>
-                                            <td><strong>{{ metric }}</strong></td>
-                                            <td>
-                                                {% set rf_value = metrics.get('Random Forest', {}).get(metric, 'N/A') %}
-                                                {% if rf_value != 'N/A' and rf_value is not string %}
-                                                    {{ rf_value|round(4) }}
-                                                {% else %}
-                                                    {{ rf_value }}
-                                                {% endif %}
-                                            </td>
-                                            <td>
-                                                {% set prophet_value = metrics.get('Prophet', {}).get(metric, 'N/A') %}
-                                                {% if prophet_value != 'N/A' and prophet_value is not string %}
-                                                    {{ prophet_value|round(4) }}
-                                                {% else %}
-                                                    {{ prophet_value }}
-                                                {% endif %}
-                                            </td>
-                                            <td>
-                                                {% set diff = metrics.get('Difference', {}).get(metric, 'N/A') %}
-                                                {% if diff != 'N/A' and diff is not string %}
-                                                    {% if metric == 'R2' %}
-                                                        <span class="{% if diff > 0 %}text-danger{% else %}text-success{% endif %}">
-                                                            {{ diff|round(4) }}
-                                                        </span>
-                                                    {% else %}
-                                                        <span class="{% if diff > 0 %}text-danger{% else %}text-success{% endif %}">
-                                                            {{ diff|round(4) }}
-                                                        </span>
-                                                    {% endif %}
-                                                {% else %}
-                                                    {{ diff }}
-                                                {% endif %}
-                                            </td>
+                                    {% for model_name, metrics in comparison.model_metrics.items() %}
+                                        <tr {% if comparison.best_model == model_name %}class="table-success"{% endif %}>
+                                            <td><strong>{{ model_name }}</strong> {% if comparison.best_model == model_name %}<i class="fas fa-trophy text-warning" title="Best model"></i>{% endif %}</td>
+                                            <td>{{ metrics.RMSE|default(0)|round(4) if metrics.RMSE is defined else 'N/A' }}</td>
+                                            <td>{{ metrics.MAE|default(0)|round(4) if metrics.MAE is defined else 'N/A' }}</td>
+                                            <td>{{ metrics.R2|default(0)|round(4) if metrics.R2 is defined else 'N/A' }}</td>
                                         </tr>
                                     {% endfor %}
                                 </tbody>
                             </table>
                         </div>
                         <div class="mt-2 small text-muted">
-                            <p><strong>MAE:</strong> Mean Absolute Error - Average absolute difference between predicted and actual values.</p>
-                            <p><strong>RMSE:</strong> Root Mean Square Error - Square root of the average of squared differences.</p>
-                            <p><strong>R2:</strong> R-squared - Proportion of variance explained by the model (higher is better).</p>
+                            <p><strong>RMSE:</strong> Root Mean Square Error - Square root of the average of squared differences. Lower is better.</p>
+                            <p><strong>MAE:</strong> Mean Absolute Error - Average absolute difference between predicted and actual values. Lower is better.</p>
+                            <p><strong>R²:</strong> R-squared - Proportion of variance explained by the model. Values closer to 1 are better.</p>
                         </div>
                     {% else %}
                         <div class="alert alert-warning">
-                            <i class="fas fa-exclamation-triangle"></i> No metrics data available. The models may have failed to generate comparable predictions.
+                            <i class="fas fa-exclamation-triangle me-2"></i> No metrics data available. The models may have failed to generate comparable predictions.
                         </div>
                     {% endif %}
                 </div>
@@ -124,22 +110,14 @@
             
             <div class="card shadow-sm">
                 <div class="card-header bg-light">
-                    <h5 class="card-title mb-0">Conclusion</h5>
+                    <h5 class="card-title mb-0"><i class="fas fa-award me-2"></i>Conclusion</h5>
                 </div>
                 <div class="card-body">
-                    {% if metrics and metrics.get('Random Forest') and metrics.get('Prophet') %}
-                        {% set rf_rmse = metrics.get('Random Forest', {}).get('RMSE', 0) %}
-                        {% set prophet_rmse = metrics.get('Prophet', {}).get('RMSE', 0) %}
-                        {% set rf_r2 = metrics.get('Random Forest', {}).get('R2', 0) %}
-                        {% set prophet_r2 = metrics.get('Prophet', {}).get('R2', 0) %}
-                        
-                        {% if rf_rmse < prophet_rmse and rf_r2 > prophet_r2 %}
-                            <p class="mb-0">Based on the performance metrics, <strong class="text-success">Random Forest</strong> appears to be the better model for predicting {{ stock }} stock prices, with lower error rates and better fit.</p>
-                        {% elif prophet_rmse < rf_rmse and prophet_r2 > rf_r2 %}
-                            <p class="mb-0">Based on the performance metrics, <strong class="text-success">Prophet</strong> appears to be the better model for predicting {{ stock }} stock prices, with lower error rates and better fit.</p>
-                        {% else %}
-                            <p class="mb-0">The results are mixed. <strong>Random Forest</strong> performs better on some metrics, while <strong>Prophet</strong> performs better on others. Consider the specific needs of your prediction task when choosing a model.</p>
-                        {% endif %}
+                    {% if comparison and comparison.best_model %}
+                        <p class="mb-0">Based on the performance metrics, <strong class="text-success">{{ comparison.best_model }}</strong> appears to be the best model for predicting {{ stock }} stock prices, with lower error rates and better fit compared to other models.</p>
+                        <p class="mt-2 mb-0 small text-muted">Evaluation based on {{ comparison.days_compared|default(0) }} days of data. {% if comparison.execution_time is defined %}Analysis completed in {{ comparison.execution_time|round(2) }} seconds.{% endif %}</p>
+                    {% elif comparison and comparison.model_metrics %}
+                        <p class="mb-0">The results are mixed, with different models showing strengths in different metrics. Consider your specific needs when selecting a model.</p>
                     {% else %}
                         <p class="text-muted mb-0">Unable to determine the better model due to missing comparison data.</p>
                     {% endif %}
@@ -149,12 +127,15 @@
     </div>
     
     <div class="row mt-4 mb-4">
-        <div class="col-12">
-            <a href="{{ url_for('index', stock=stock) }}" class="btn btn-primary">
-                <i class="fas fa-chart-line me-1"></i> Back to Dashboard
+        <div class="col-12 text-center">
+            <a href="{{ url_for('index', stock=stock) }}" class="btn btn-outline-secondary me-2">
+                <i class="fas fa-arrow-left me-1"></i> Back to Dashboard
             </a>
-            <a href="{{ url_for('random_forest_analysis', stock=stock) }}" class="btn btn-success ms-2">
-                <i class="fas fa-tree me-1"></i> View Random Forest Details
+            <a href="{{ url_for('random_forest_analysis', stock=stock) }}" class="btn btn-primary me-2">
+                <i class="fas fa-tree me-1"></i> Random Forest Analysis
+            </a>
+            <a href="{{ url_for('xgboost_analysis', stock=stock) }}" class="btn btn-success me-2">
+                <i class="fas fa-bolt me-1"></i> XGBoost Analysis
             </a>
         </div>
     </div>

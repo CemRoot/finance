@@ -1,81 +1,44 @@
 {# templates/partials/_dashboard_header.html #}
 {% if stock %}
-<div class="dashboard-header mb-3">
-    <h1 class="fs-4 mb-0">
-        {{ stock }}
-        {% if stock_data and stock_data.company_name and stock_data.company_name != stock %} <small
-            class="text-muted fw-normal">({{ stock_data.company_name }})</small> {% endif %}
-    </h1>
-    <div class="status-badges ms-md-auto d-flex align-items-center gap-3"> {# Added d-flex and gap #}
-        {# Market Status #}
-        {# *** FIX: Check if stock_data exists before accessing market_status *** #}
-        {% set market_status = stock_data.market_status if stock_data and stock_data.market_status else 'Unknown' %}
-        {% set status_lower = market_status.lower() %}
-        {% set is_open = 'reg' in status_lower or 'open' in status_lower %} {# More robust check #}
-        {% set is_pre_post = 'pre' in status_lower or 'post' in status_lower or 'extended' in status_lower %}
-        {% set badge_bg = 'bg-success' if is_open else ('bg-warning' if is_pre_post else ('bg-secondary' if 'closed' in
-        status_lower else 'bg-info')) %}
-        {% set badge_text = 'text-dark' if is_pre_post else 'text-white' %}
-        {% set badge_icon = 'fa-check-circle' if is_open else ('fa-hourglass-half' if is_pre_post else
-        ('fa-times-circle' if 'closed' in status_lower else 'fa-question-circle')) %}
-        <div class="market-status-badge badge rounded-pill px-3 py-1 {{ badge_bg }} {{ badge_text }}">
-            <i class="fas {{ badge_icon }} me-1"></i>
-            {# *** FIX: Display status directly, remove _() call *** #}
-            <span>Market {{ market_status | replace('_', ' ') | title }}</span>
-        </div>
-
-        {# Price Information #}
-        {# *** FIX: Check if stock_data exists before accessing price/change *** #}
-        {% if stock_data and stock_data.current_price is not none %}
-        <div class="price-badge text-end">
-            <span class="current-price fw-bold fs-5">{{ stock_data.current_price | format_number(2) }}{{
-                stock_data.currency | default('$') }}</span> {# Use format_number filter and add currency #}
-            <span
-                class="change-percent small {{ 'text-success' if stock_data.change_percent >= 0 else 'text-danger' }} d-block">
-                {# d-block to put it below #}
-                {% if stock_data.change_percent is not none %}
-                <i class="fas {{ 'fa-arrow-up' if stock_data.change_percent >= 0 else 'fa-arrow-down' }} me-1"></i>
-                {{ stock_data.change_percent | format_number(2) }}% {# Use format_number filter #}
-                {% else %}
-                N/A
+<div class="dashboard-header p-3 mb-3 border-bottom bg-light">
+    <div class="container-fluid">
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <h1 class="h3 mb-0">Financial Dashboard</h1>
+                {% if stock %}
+                <p class="text-muted mb-0">{{ stock }}</p>
                 {% endif %}
-            </span>
-        </div>
-        {% else %}
-        <div class="price-badge text-end ms-3">
-            <span class="current-price fw-bold fs-5">N/A</span>
-            <span class="change-percent small text-muted d-block">N/A</span>
-        </div>
-        {% endif %}
+            </div>
+            
+            {% if stock %}
+            <div class="d-flex gap-2">
+                <!-- 10 Year Analysis with Alpha Vantage Button -->
+                <a href="{{ url_for('full_stock_analysis', stock=stock) }}" class="btn btn-sm btn-outline-primary" onclick="showLoader(); return true;">
+                    <i class="fas fa-chart-line me-1"></i> 10-Year Analysis
+                </a>
 
-        {# Decision Badge #}
-        {# *** FIX: Check if decision variable exists and is not None/empty *** #}
-        {% if decision and decision != 'No Data' and decision != 'Error' and decision != 'Analysis N/A' and decision !=
-        'Insufficient data for analysis' and decision != 'Insufficient indicators for decision' and decision != 'No News
-        Data' and decision != 'Decision Error' %}
-        {% set decision_key = decision | lower %} {# Lowercase decision #}
-        {% set decision_map = {'buy': 'success', 'sell': 'danger', 'hold': 'warning'} %}
-        {% set decision_bg = 'bg-' + decision_map.get(decision_key, 'secondary') %}
-        {% set decision_text = 'text-dark' if decision_key == 'hold' else 'text-white' %}
-        <div class="decision-badge badge rounded-pill px-3 py-1 fs-6 {{ decision_bg }} {{ decision_text }}">
-            {{ decision }}
+                <!-- Random Forest Button -->
+                <a href="{{ url_for('random_forest_analysis', stock=stock) }}" class="btn btn-sm btn-outline-success" onclick="showLoader(); return true;">
+                    <i class="fas fa-tree me-1"></i> Random Forest
+                </a>
+                
+                <!-- XGBoost Button -->
+                <a href="{{ url_for('xgboost_analysis', stock=stock) }}" class="btn btn-sm btn-outline-success" onclick="showLoader(); return true;">
+                    <i class="fas fa-bolt me-1"></i> XGBoost
+                </a>
+                
+                <!-- Model Comparison Button -->
+                <a href="{{ url_for('model_comparison', stock=stock) }}" class="btn btn-sm btn-outline-info" onclick="showLoader(); return true;">
+                    <i class="fas fa-balance-scale me-1"></i> Model Comparison
+                </a>
+                
+                <!-- Refresh Button -->
+                <button type="button" class="btn btn-sm btn-outline-secondary" id="refresh-data">
+                    <i class="fas fa-sync-alt me-1"></i> Refresh Data
+                </button>
+            </div>
+            {% endif %}
         </div>
-        {% else %}
-        {# Optionally show a placeholder or nothing if decision is not clear #}
-        <div class="decision-badge badge rounded-pill px-3 py-1 fs-6 bg-light text-muted">
-            {{ decision | default('Analysis Pending') }} {# Show the status like 'No Data' or 'Error' #}
-        </div>
-        {% endif %}
-    </div>
-
-    <!-- ML Analysis Buttons -->
-    <div class="ml-analysis-buttons ms-3">
-        <a href="{{ url_for('random_forest_analysis', stock=stock) }}" class="btn btn-sm btn-outline-primary">
-            <i class="fas fa-chart-line me-1"></i>Random Forest
-        </a>
-        <a href="{{ url_for('model_comparison', stock=stock) }}" class="btn btn-sm btn-outline-info ms-2">
-            <i class="fas fa-balance-scale me-1"></i>Model Comparison
-        </a>
     </div>
 </div>
 {% endif %}

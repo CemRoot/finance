@@ -5,14 +5,16 @@ import matplotlib
 matplotlib.use('Agg') # Use non-interactive backend BEFORE importing pyplot
 import matplotlib.pyplot as plt
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
-from sklearn.model_selection import train_test_split, GridSearchCV, TimeSeriesSplit
+from sklearn.model_selection import GridSearchCV, TimeSeriesSplit
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score, precision_recall_fscore_support, accuracy_score
 import joblib
 import os
 import logging
 import pandas_ta as ta # Import pandas_ta
 import time  # Add this at the top of the file if not already imported
-from typing import Tuple, List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional
+from datetime import datetime
+from sklearn.model_selection import learning_curve
 
 # Set up logging
 logging.basicConfig(
@@ -561,107 +563,134 @@ class StockPricePredictor:
             logger.error(f"GridSearchCV failed: {e}", exc_info=True)
             return {'error': str(e)}
 
-    def plot_learning_curve(self, df: pd.DataFrame, train_sizes_frac=np.linspace(0.2, 1.0, 5)) -> Dict[str, Any]:
-        """Generates and saves a learning curve plot using TimeSeriesSplit."""
-        logger.info("Generating learning curve plot...")
+    def plot_learning_curve(self, df: pd.DataFrame, cv: int = 5) -> Dict[str, Any]:
+        """
+        Plot learning curve to evaluate model performance with different training sizes.
+        
+        Args:
+            df: DataFrame to use for plotting learning curve
+            cv: Number of cross-validation folds
+            
+        Returns:
+            Dictionary with plot data
+        """
         try:
-            X, y, _ = self.prepare_features(df)
-            if X.empty or y.empty: return {'error': "No data for learning curve."}
-        except Exception as e: logger.error(f"Feature prep error for learning curve: {e}"); return {'error': f"Feature prep failed: {e}"}
-
-        # Calculate absolute sizes based on X (after prepare_features)
-        train_sizes_abs = (len(X) * train_sizes_frac).astype(int)
-        train_sizes_abs = np.unique(train_sizes_abs[train_sizes_abs >= 10]) # Min 10 samples
-        if len(train_sizes_abs) < 2: logger.warning(f"Need >= 2 distinct train sizes > 10 ({train_sizes_abs})."); return {'error': "Insufficient data range."}
-
-        logger.info(f"Plotting learning curve with train sizes: {train_sizes_abs}")
-        train_scores_mean, test_scores_mean = [], []
-        tscv = TimeSeriesSplit(n_splits=5) # Use fixed splits for consistency
-
-        # Use a temporary model based on current settings
-        temp_model_params = self.model.get_params()
-        temp_model = RandomForestRegressor(**temp_model_params) if self.model_type == 'regressor' else RandomForestClassifier(**temp_model_params)
-
-        for n_train_samples in train_sizes_abs:
-            fold_train_scores, fold_test_scores = [], []
-            for train_index, test_index in tscv.split(X):
-                 # Get the latest 'n_train_samples' from the current fold's training set
-                 current_train_index = train_index[-min(len(train_index), n_train_samples):]
-                 if len(current_train_index) < 5: continue # Skip if too small
-
-                 X_train_fold, y_train_fold = X.iloc[current_train_index], y.iloc[current_train_index]
-                 X_test_fold, y_test_fold = X.iloc[test_index], y.iloc[test_index]
-
-                 try:
-                    temp_model.fit(X_train_fold, y_train_fold)
-                    # Evaluate on the training portion used for this fold
-                    train_pred = temp_model.predict(X_train_fold)
-                    test_pred = temp_model.predict(X_test_fold)
-
-                    if self.model_type == 'regressor':
-                        train_score = np.sqrt(mean_squared_error(y_train_fold, train_pred))
-                        test_score = np.sqrt(mean_squared_error(y_test_fold, test_pred))
-                    else: # classifier
-                        _, _, train_score, _ = precision_recall_fscore_support(y_train_fold, train_pred, average='binary', zero_division=0)
-                        _, _, test_score, _ = precision_recall_fscore_support(y_test_fold, test_pred, average='binary', zero_division=0)
-                    fold_train_scores.append(train_score); fold_test_scores.append(test_score)
-                 except Exception as fit_eval_err: logger.warning(f"Fit/eval error size {n_train_samples}: {fit_eval_err}"); fold_train_scores.append(np.nan); fold_test_scores.append(np.nan)
-
-            train_scores_mean.append(np.nanmean(fold_train_scores))
-            test_scores_mean.append(np.nanmean(fold_test_scores))
-
-        # Plotting
-        plt.figure(figsize=(10, 6)); plt.plot(train_sizes_abs, train_scores_mean, 'o-', color="r", linewidth=2, label='Training score'); plt.plot(train_sizes_abs, test_scores_mean, 'o-', color="g", linewidth=2, label='Cross-validation score'); plt.title(f'Learning Curve ({self.model.__class__.__name__})'); plt.xlabel('Training Set Size'); plt.ylabel('RMSE' if self.model_type == 'regressor' else 'F1 Score'); plt.legend(loc='best'); plt.grid(True); plt.ylim(bottom=0)
-        img_dir = 'static/images'; os.makedirs(img_dir, exist_ok=True); save_path = os.path.join(img_dir, 'learning_curve.png'); rel_path = '/static/images/learning_curve.png'
-        try: plt.savefig(save_path); plt.close(); logger.info(f"Learning curve saved: {save_path}"); return {'image_path': rel_path}
-        except Exception as e: logger.error(f"Failed save learning curve: {e}"); plt.close(); return {'error': 'Failed save plot.'}
+            if self.model is None:
+                logger.warning("Model not trained yet")
+                return {'error': 'Model not trained yet'}
+            
+            # Prepare data
+            X, y, _ = self.prepare_features(df)  # Unpack correctly, ignoring the third return value
+            
+            # Define train sizes
+            train_sizes = np.linspace(0.1, 1.0, 10)
+            
+            # Calculate learning curve
+            train_sizes, train_scores, test_scores = learning_curve(
+                self.model, X, y, train_sizes=train_sizes, cv=cv, n_jobs=-1, scoring='neg_mean_squared_error'
+            )
+            
+            # Calculate mean and std
+            train_mean = -np.mean(train_scores, axis=1)
+            train_std = np.std(train_scores, axis=1)
+            test_mean = -np.mean(test_scores, axis=1)
+            test_std = np.std(test_scores, axis=1)
+            
+            # Plot
+            plt.figure(figsize=(10, 6))
+            plt.grid()
+            plt.fill_between(train_sizes, train_mean - train_std, train_mean + train_std, alpha=0.1, color='blue')
+            plt.fill_between(train_sizes, test_mean - test_std, test_mean + test_std, alpha=0.1, color='red')
+            plt.plot(train_sizes, train_mean, 'o-', color='blue', label='Training score')
+            plt.plot(train_sizes, test_mean, 'o-', color='red', label='Cross-validation score')
+            plt.title('Learning Curve (Random Forest)')
+            plt.xlabel('Training examples')
+            plt.ylabel('Mean Squared Error')
+            plt.legend(loc='best')
+            plt.tight_layout()
+            
+            # Create directory if it doesn't exist
+            image_dir = os.path.join('static', 'images', 'analysis', 'learning')
+            os.makedirs(image_dir, exist_ok=True)
+            
+            # Generate timestamp
+            timestamp = int(datetime.now().timestamp())
+            
+            # Save plot
+            image_path = os.path.join(image_dir, f'rf_learning_curve_{timestamp}.png')
+            plt.savefig(image_path)
+            plt.close()
+            
+            logger.info(f"Learning curve plot saved to {image_path}")
+            
+            return {
+                'image_path': image_path.replace('static/', ''),
+                'train_sizes': train_sizes.tolist(),
+                'train_scores': train_mean.tolist(),
+                'test_scores': test_mean.tolist()
+            }
+            
+        except Exception as e:
+            logger.error(f"Error plotting learning curve: {e}", exc_info=True)
+            return {'error': str(e)}
 
     def plot_feature_importance(self, top_n: int = 15) -> dict:
         """
-        Plots feature importance and returns the result.
-
+        Plot feature importance graph for the model.
+        
         Args:
-            top_n (int): Number of top features to show.
-
-        Returns:
-            dict: Dictionary with the image path and importance data.
-        """
-        if self.feature_importance is None or len(self.feature_importance) == 0:
-            logger.error("Feature importance plot failed: No importance data available.")
-            return {'error': 'No feature importance data', 'image_path': None}
-
-        # Ensure output directory exists
-        os.makedirs('static/images', exist_ok=True)
-        fig_path = f'static/images/feature_importance_{int(time.time())}.png'
-
-        try:
-            # Get the top N features by importance
-            top_features = self.feature_importance.head(top_n)
+            top_n: Number of top features to show
             
-            # Create horizontal bar chart
+        Returns:
+            Dictionary with plot data
+        """
+        try:
+            if self.model is None:
+                logger.warning("Model not trained yet")
+                return {'error': 'Model not trained yet'}
+            
+            # Get feature importance
+            feature_importance = self.model.feature_importances_
+            
+            # Create DataFrame for plotting
+            feature_importance_df = pd.DataFrame({
+                'Feature': self.features,
+                'Importance': feature_importance
+            })
+            
+            # Sort by importance and take top N
+            feature_importance_df = feature_importance_df.sort_values('Importance', ascending=False).head(top_n)
+            
+            # Plot
             plt.figure(figsize=(10, 8))
-            plt.barh(top_features['feature'], top_features['importance'], color='skyblue')
+            plt.barh(feature_importance_df['Feature'], feature_importance_df['Importance'])
             plt.xlabel('Importance')
             plt.ylabel('Feature')
-            plt.title(f'Top {top_n} Feature Importance')
-            plt.grid(axis='x', alpha=0.5)
+            plt.title('Feature Importance')
             plt.tight_layout()
             
-            # Add value annotations
-            for i, v in enumerate(top_features['importance']):
-                plt.text(v + 0.01, i, f'{v:.3f}', va='center')
+            # Create directory if it doesn't exist
+            image_dir = os.path.join('static', 'images', 'analysis', 'features')
+            os.makedirs(image_dir, exist_ok=True)
             
-            # Save the figure
-            plt.savefig(fig_path)
+            # Generate timestamp
+            timestamp = int(datetime.now().timestamp())
+            
+            # Save plot
+            image_path = os.path.join(image_dir, f'rf_feature_importance_{timestamp}.png')
+            plt.savefig(image_path)
             plt.close()
-
+            
+            logger.info(f"Feature importance plot saved to {image_path}")
+            
             return {
-                'image_path': fig_path,
-                'importance_data': self.feature_importance.to_dict(orient='records')
+                'image_path': image_path.replace('static/', ''),
+                'top_features': feature_importance_df.to_dict('records')
             }
+            
         except Exception as e:
-            logger.error(f"Feature importance plot error: {e}", exc_info=True)
-            return {'error': str(e), 'image_path': None}
+            logger.error(f"Error plotting feature importance: {e}", exc_info=True)
+            return {'error': str(e)}
 
     def save_model(self, path="models/rf_model.joblib"):
         """Saves the trained model to a file."""
@@ -684,3 +713,23 @@ class StockPricePredictor:
         except Exception as e:
             logger.error(f"Error loading model: {e}", exc_info=True)
             return False
+
+def train_random_forest_model(df, test_size=0.2, params=None):
+    """
+    Train a random forest model on the given dataframe.
+    
+    Args:
+        df: DataFrame with stock data
+        test_size: Fraction of data to use for testing
+        params: Parameters for the model (optional)
+        
+    Returns:
+        Tuple of (metrics, X_test, y_test, y_pred, model)
+    """
+    predictor = StockPricePredictor()
+    if params:
+        predictor = StockPricePredictor(**params)
+    
+    metrics, X_test, y_test, y_pred = predictor.train(df, test_size=test_size)
+    
+    return metrics, X_test, y_test, y_pred, predictor.model

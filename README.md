@@ -36,6 +36,7 @@ The Finance Analysis Dashboard is a comprehensive web application designed for d
 - **Time Series Forecasting**: Price predictions using statistical models
 - **Machine Learning Integration**:
   - **Random Forest Analysis**: Non-linear regression for price prediction with feature importance
+  - **XGBoost Model**: Gradient boosting for enhanced prediction accuracy
   - **Prophet Model**: Time series decomposition with trend and seasonality
   - **Model Comparison**: Performance metrics and visual comparison between prediction models
   - **Learning Curve Analysis**: Model validation with varying training sizes
@@ -56,13 +57,14 @@ The Finance Analysis Dashboard is a comprehensive web application designed for d
 - **Logging**: Comprehensive logging system with configurable verbosity
 
 ### API Integrations
-- **yfinance**: Historical and real-time market data
+- **yfinance**: General historical and real-time market data
+- **MarketStack API**: Data source for machine learning models and technical indicators
 - **EventRegistry**: News article aggregation and filtering
 - **Custom APIs**: Internal data processing and analysis endpoints
 
 ### Machine Learning Pipeline
 - **Data Preprocessing**: Automated cleaning, normalization, and feature engineering
-- **Model Training**: Scikit-learn implementation with cross-validation
+- **Model Training**: Scikit-learn and XGBoost implementation with cross-validation
 - **Feature Importance**: Identification of key price-influencing factors
 - **Model Persistence**: Saved models for rapid redeployment
 - **Evaluation Metrics**: MAE, RMSE, R² for performance assessment
@@ -80,6 +82,7 @@ The Finance Analysis Dashboard is a comprehensive web application designed for d
 - Git (for repository cloning)
 - Internet connection for API access
 - EventRegistry API key (for news functionality)
+- MarketStack API key (for machine learning models)
 
 ### Setup Process
 1. **Clone the Repository**:
@@ -103,10 +106,12 @@ The Finance Analysis Dashboard is a comprehensive web application designed for d
    ```bash
    # For Unix/Linux/macOS
    export EVENTREGISTRY_API_KEY=your_api_key
+   export MARKETSTACK_API_KEY=your_marketstack_api_key
    export FLASK_DEBUG=true  # For development
 
    # For Windows
    set EVENTREGISTRY_API_KEY=your_api_key
+   set MARKETSTACK_API_KEY=your_marketstack_api_key
    set FLASK_DEBUG=true
    ```
 
@@ -163,6 +168,7 @@ The application provides a multi-tab interface for comprehensive analysis:
 
 5. **ML Analysis**:
    - Random Forest model insights
+   - XGBoost analysis for improved predictions
    - Feature importance visualization
    - Model performance metrics
 
@@ -198,19 +204,6 @@ Instructions for utilizing technical indicators:
    - Confirm price movements with corresponding volume
    - Look for volume divergence as potential reversal signal
    - Identify institutional participation through volume spikes
-
-### Machine Learning Features
-
-1. **Random Forest Analysis**:
-   - Access via sidebar or dedicated tab
-   - Review feature importance to understand price drivers
-   - Evaluate model performance through learning curves
-   - Analyze prediction accuracy with various metrics
-
-2. **Model Comparison**:
-   - Compare multiple forecasting approaches
-   - Understand strengths and weaknesses of different algorithms
-   - Select the most appropriate model based on specific stock characteristics
 
 ## System Architecture
 
